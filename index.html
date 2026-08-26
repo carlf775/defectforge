@@ -336,6 +336,14 @@ Every mask measured from the pixels that changed.</p>
 
 <script>
 const $ = s => document.querySelector(s);
+window.onerror = (msg, src, line) => {
+  let b = document.querySelector("#errbar");
+  if(!b){ b = document.createElement("div"); b.id = "errbar";
+    b.style.cssText = "position:fixed;bottom:0;left:0;right:0;z-index:200;background:#7f1d1d;"+
+      "color:#fff;font:12px ui-monospace,monospace;padding:8px 14px;white-space:pre-wrap";
+    document.body.appendChild(b); }
+  b.textContent = `page error: ${msg} (line ${line}) — screenshot this for debugging`;
+};
 const CELLS = ["top-left","top-center","top-right","middle-left","center","middle-right",
                "bottom-left","bottom-center","bottom-right"];
 const IMG_RE = /\.(jpe?g|png|bmp|webp)$/i;
@@ -539,17 +547,27 @@ for(const [zone, inp] of [["#dropAnn","#fAnn"], ["#dropGood","#fGood"]]){
   };
 }
 
+function fileReport(files){
+  const all = [...files];
+  const imgs = all.filter(f => IMG_RE.test(f.name));
+  const js = all.filter(f => f.name.endsWith(".json"));
+  const other = all.length - imgs.length - js.length;
+  return {all, imgs, js,
+    text: `picked ${all.length} file(s): ${imgs.length} image(s), ${js.length} json` +
+      (other ? `, ${other} other (skipped — only jpg/png/bmp/webp images load)` : "")};
+}
 $("#fGood").onchange = e => {
-  state.goods = [...e.target.files].filter(f => IMG_RE.test(f.name));
-  $("#goodInfo").textContent = `${state.goods.length} good image(s)`;
+  const r = fileReport(e.target.files);
+  state.goods = r.imgs;
+  $("#goodInfo").textContent = r.text;
   ready();
 };
 
 $("#fAnn").onchange = async e => {
   const files = [...e.target.files];
+  $("#annInfo").textContent = fileReport(files).text + " — reading…";
   const byPath = new Map(files.map(f => [f.webkitRelativePath || f.name, f]));
   const jsons = files.filter(f => f.name.endsWith(".json"));
-  if(!jsons.length){ $("#annInfo").textContent = "no COCO .json found in that folder"; return; }
   state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[]; state.exemplars=[];
   const counts = new Map();
   for(const jf of jsons){
@@ -878,8 +896,9 @@ $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1, drag:null};
 $("#annotateHere").onclick = e => { e.preventDefault(); $("#fRaw").click(); };
 $("#fRaw").onchange = e => {
-  anno.imgs = [...e.target.files].filter(f => IMG_RE.test(f.name));
-  if(!anno.imgs.length) return;
+  const r = fileReport(e.target.files);
+  anno.imgs = r.imgs;
+  if(!anno.imgs.length){ $("#annInfo").textContent = r.text + " — nothing to annotate"; return; }
   anno.idx = 0; anno.boxes = new Map(); anno.drag = null;
   $("#anno").classList.add("on"); annoShow(0);
 };
@@ -1173,7 +1192,7 @@ mask.querySelector("#tSkip").onclick = endTour;
 addEventListener("resize", () => mask.classList.contains("on") && place());
 addEventListener("scroll", () => mask.classList.contains("on") && place(), {passive:true});
 addEventListener("keydown", e => { if(!mask.classList.contains("on")) return;
-  if(e.key === "Escape" && !mandatory) endTour();
+  if(e.key === "Escape") endTour();
   if(e.key === "ArrowRight") mask.querySelector("#tNext").click();
   if(e.key === "ArrowLeft" && step) show(step-1); });
 $("#guide").onclick = () => openTour(true);
