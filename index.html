@@ -64,7 +64,8 @@ button:disabled{opacity:.4;cursor:not-allowed}
   text-align:center;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s;
   background:rgba(255,255,255,.03)}
 .drop:hover{border-color:var(--accent);color:var(--ink);background:var(--input)}
-.drop b{color:var(--ink);font:600 14px var(--display);display:block;margin-bottom:2px}
+.drop b{color:var(--ink);font:600 14px var(--display)}
+.drop a{color:var(--ok)}
 input[type=file]{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
 .chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);
@@ -221,17 +222,23 @@ Every mask measured from the pixels that changed.</p>
   <div class="grid g2">
     <div>
       <label>Annotated defects (images + COCO json) → test split</label>
-      <div class="drop" id="dropAnn"><b>Choose folder</b> or drop files here</div>
+      <div class="drop" id="dropAnn"><b>Choose folder</b> ·
+        <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
+        or drop them here</div>
       <input type="file" id="fAnn" webkitdirectory directory multiple>
+      <input type="file" id="fAnnF" accept="image/*,.json" multiple>
       <div class="note" style="margin-top:7px">no annotations yet?
         <a href="#" id="annotateHere">draw them here</a></div>
-      <input type="file" id="fRaw" webkitdirectory directory multiple>
+      <input type="file" id="fRaw" accept="image/*" multiple>
       <div id="annInfo" class="note"></div>
     </div>
     <div>
       <label>Good items (defect-free) → bases for train/valid</label>
-      <div class="drop" id="dropGood"><b>Choose folder</b> or drop files here</div>
+      <div class="drop" id="dropGood"><b>Choose folder</b> ·
+        <a href="#" id="pickGoodFiles" onclick="event.stopPropagation()">pick files</a> ·
+        or drop them here</div>
       <input type="file" id="fGood" webkitdirectory directory multiple>
+      <input type="file" id="fGoodF" accept="image/*" multiple>
       <div id="goodInfo" class="note"></div>
     </div>
   </div>
@@ -511,6 +518,8 @@ const plausible = (box,w,h) => {
 /* ---------- input ---------- */
 $("#dropAnn").onclick = () => $("#fAnn").click();
 $("#dropGood").onclick = () => $("#fGood").click();
+$("#pickAnnFiles").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#fAnnF").click(); };
+$("#pickGoodFiles").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#fGoodF").click(); };
 // drag-and-drop: dropping files (or a folder) works the same as the picker
 for(const [zone, inp] of [["#dropAnn","#fAnn"], ["#dropGood","#fGood"]]){
   const el = $(zone);
@@ -652,6 +661,8 @@ $("#remember").checked = !!localStorage.getItem(KEY);
 const saveKey = () => $("#remember").checked
   ? localStorage.setItem(KEY, $("#key").value) : localStorage.removeItem(KEY);
 $("#key").oninput = () => { saveKey(); ready(); };
+$("#fAnnF").onchange = e => $("#fAnn").onchange(e);
+$("#fGoodF").onchange = e => $("#fGood").onchange(e);
 $("#remember").onchange = saveKey;
 $("#model").value = localStorage.getItem("df_model") || "gemini-2.5-flash-image";
 $("#model").onchange = () => localStorage.setItem("df_model", $("#model").value);
