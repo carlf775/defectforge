@@ -99,6 +99,11 @@ input[type=file]{display:none}
 .note{font-size:12.5px;color:var(--muted);margin-top:12px}
 .warn{border-left:2px solid var(--ok);padding-left:13px}
 .row{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+details.mini{margin-top:9px;font-size:12.5px;color:var(--muted)}
+details.mini summary{cursor:pointer;color:var(--ink);font-size:12.5px}
+details.mini ol{margin:8px 0 4px;padding-left:20px}
+details.mini li{margin-bottom:5px}
+details.mini p{margin:6px 0 0}
 .remember{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);
   margin-top:8px;cursor:pointer}
 .remember input{accent-color:var(--accent);margin:0}
@@ -177,8 +182,22 @@ model says. Out comes a zip Roboflow imports with the splits intact. Runs entire
   <h2><i>1</i>Gemini</h2>
   <div class="grid g2">
     <div>
-      <label for="key">API key <span style="opacity:.7">(stays in this browser)</span></label>
+      <label for="key">API key <span style="opacity:.7">(stays in this browser)</span> ·
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get one here</a></label>
       <input id="key" type="password" placeholder="AIza…" autocomplete="off">
+      <details class="mini">
+        <summary>How to get a key (30 seconds)</summary>
+        <ol>
+          <li>Open <a href="https://aistudio.google.com/apikey" target="_blank"
+            rel="noopener">aistudio.google.com/apikey</a> and sign in with your Google account.</li>
+          <li>Click <b>Create API key</b> and copy it here.</li>
+          <li>Recommended: click the key, add an <b>HTTP referrer restriction</b> for this
+            site's address, and allow only the <b>Generative Language API</b>. Then the key is
+            useless anywhere else if it ever leaks.</li>
+        </ol>
+        <p>Image generation needs a paid key — check the model is enabled for your plan in
+        AI Studio.</p>
+      </details>
       <label class="remember"><input type="checkbox" id="remember">
         remember on this device</label>
     </div>
@@ -882,7 +901,8 @@ const TOUR = [
  {sel:"#segSize", t:"Small or big defects",
   b:"Pick how big a defect is, and how strong it looks. <b>Mixed</b> picks a new size and "+
     "strength for each defect — closest to real life. <b>Hairline + faint</b> is the hard "+
-    "stuff: the kind inspectors get paid to catch."},
+    "stuff: the kind inspectors get paid to catch. Below these sits a free-text box — anything "+
+    "you type there is added to every prompt, like \"defects sit on the weld seam\"."},
  {sel:"#try", t:"Preview before you spend",
   b:"<b>Preview 3</b> makes three images with your settings. That costs a few calls, not "+
     "hundreds. Look at them. Adjust. Preview again. Only then run the big batch."},
