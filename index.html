@@ -146,15 +146,22 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
   letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .card .meta{flex-wrap:wrap;row-gap:2px}
 .card .meta .m{width:100%;font-size:11px;opacity:.85;font-variant-numeric:tabular-nums}
-#light{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.72);
+#light,#anno{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.72);
   -webkit-backdrop-filter:blur(26px) saturate(1.2);backdrop-filter:blur(26px) saturate(1.2);
   display:none;flex-direction:column;padding:18px 20px 20px}
-#light.on{display:flex}
-#light .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
-#light .top .who{font:600 15px var(--display)}
-#light .top .m{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
-#light .top .sp{margin-left:auto;display:flex;gap:8px}
-#light .stage{flex:1;display:grid;place-items:center;min-height:0}
+#light.on,#anno.on{display:flex}
+#light .top,#anno .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+#light .top .who,#anno .top .who{font:600 15px var(--display)}
+#light .top .m,#anno .top .m{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+#light .top .sp,#anno .top .sp{margin-left:auto;display:flex;gap:8px}
+#light .stage,#anno .stage{flex:1;display:grid;place-items:center;min-height:0}
+#anno .top input{width:auto}
+#anno .acls{display:flex;gap:6px;flex-wrap:wrap}
+#anno .acls button{padding:5px 11px;font-size:12.5px;border-radius:999px}
+#anno .acls button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#aCanvas{border:1px solid var(--line);border-radius:var(--radius);cursor:crosshair;
+  max-width:100%;max-height:100%}
+#anno .hint{text-align:center;font-size:12px;color:var(--muted);margin-top:12px}
 #light .frame{position:relative;display:inline-block;max-width:100%;max-height:100%}
 #light .frame img{display:block;max-width:100%;max-height:calc(100vh - 150px);
   border:1px solid var(--line);border-radius:var(--radius)}
@@ -216,6 +223,9 @@ Every mask measured from the pixels that changed.</p>
       <label>Annotated defects (images + COCO json) → test split</label>
       <div class="drop" id="dropAnn"><b>Choose folder</b></div>
       <input type="file" id="fAnn" webkitdirectory directory multiple>
+      <div class="note" style="margin-top:7px">no annotations yet?
+        <a href="#" id="annotateHere">draw them here</a></div>
+      <input type="file" id="fRaw" webkitdirectory directory multiple>
       <div id="annInfo" class="note"></div>
     </div>
     <div>
@@ -286,6 +296,24 @@ Every mask measured from the pixels that changed.</p>
   <div class="cards" id="cards"></div>
   <p class="note">Click an image to inspect · drop removes it from the dataset.</p>
 </section>
+
+<div id="anno">
+  <div class="top">
+    <span class="who">Annotate</span><span class="m" id="aCount"></span>
+    <span class="acls" id="aChips"></span>
+    <input id="aNew" type="text" placeholder="new class + Enter" style="width:150px">
+    <span class="sp">
+      <button id="aPrev">‹</button><button id="aNext">›</button>
+      <button id="aUndo">undo</button>
+      <button id="aSave">save COCO json</button>
+      <button id="aDone" class="primary">Done</button>
+      <button id="aClose">close</button>
+    </span>
+  </div>
+  <div class="stage"><canvas id="aCanvas"></canvas></div>
+  <div class="hint">pick a class, then drag a box around each defect · ←/→ change image ·
+    <b>z</b> undo · images without boxes are left out</div>
+</div>
 
 <div id="light">
   <div class="top">
@@ -811,6 +839,152 @@ window.selfTest = function(){
     ? "PASS " + msg : "FAIL " + msg;
 };
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
+/* ---------- built-in annotator ---------- */
+const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1, drag:null};
+$("#annotateHere").onclick = e => { e.preventDefault(); $("#fRaw").click(); };
+$("#fRaw").onchange = e => {
+  anno.imgs = [...e.target.files].filter(f => IMG_RE.test(f.name));
+  if(!anno.imgs.length) return;
+  anno.idx = 0; anno.boxes = new Map(); anno.drag = null;
+  $("#anno").classList.add("on"); annoShow(0);
+};
+async function annoShow(i){
+  anno.idx = Math.max(0, Math.min(anno.imgs.length-1, i));
+  if(anno.bmp) anno.bmp.close();
+  anno.bmp = await createImageBitmap(anno.imgs[anno.idx]);
+  const c = $("#aCanvas");
+  anno.scale = Math.min(1, (innerWidth-80)/anno.bmp.width, (innerHeight-200)/anno.bmp.height);
+  c.width = Math.round(anno.bmp.width*anno.scale);
+  c.height = Math.round(anno.bmp.height*anno.scale);
+  annoDraw();
+  $("#aCount").textContent = `${anno.idx+1} / ${anno.imgs.length} · ${anno.imgs[anno.idx].name}` +
+    ` · ${(anno.boxes.get(anno.idx)||[]).length} box(es)`;
+}
+function annoDraw(){
+  const c = $("#aCanvas"), x = c.getContext("2d");
+  x.drawImage(anno.bmp, 0, 0, c.width, c.height);
+  x.lineWidth = 2; x.font = "600 12px sans-serif";
+  for(const b of anno.boxes.get(anno.idx)||[]){
+    x.strokeStyle = x.fillStyle = colorForLabel(b.cls);
+    x.strokeRect(b.x*anno.scale, b.y*anno.scale, b.w*anno.scale, b.h*anno.scale);
+    x.fillText(b.cls, b.x*anno.scale+3, Math.max(11, b.y*anno.scale-4));
+  }
+  if(anno.drag){
+    x.strokeStyle = "#fff"; x.setLineDash([5,4]);
+    x.strokeRect(anno.drag.x0, anno.drag.y0, anno.drag.x1-anno.drag.x0, anno.drag.y1-anno.drag.y0);
+    x.setLineDash([]);
+  }
+}
+function annoClasses(){
+  $("#aChips").innerHTML = "";
+  for(const n of anno.classes){
+    const b = document.createElement("button");
+    b.textContent = n; b.classList.toggle("on", n === anno.cls);
+    b.style.borderColor = colorForLabel(n);
+    b.onclick = () => { anno.cls = n; annoClasses(); };
+    $("#aChips").appendChild(b);
+  }
+}
+$("#aNew").onkeydown = e => {
+  if(e.key !== "Enter") return;
+  const n = $("#aNew").value.trim().replace(/[,:]/g, "");
+  if(n && !anno.classes.includes(n)) anno.classes.push(n);
+  if(n) anno.cls = n;
+  $("#aNew").value = ""; annoClasses();
+};
+const aPos = e => { const r = $("#aCanvas").getBoundingClientRect();
+  return [e.clientX - r.left, e.clientY - r.top]; };
+$("#aCanvas").onpointerdown = e => {
+  if(!anno.cls){ $("#aNew").focus(); $("#aNew").placeholder = "name a class first!"; return; }
+  const [px,py] = aPos(e);
+  anno.drag = {x0:px, y0:py, x1:px, y1:py};
+  $("#aCanvas").setPointerCapture(e.pointerId);
+};
+$("#aCanvas").onpointermove = e => {
+  if(!anno.drag) return;
+  [anno.drag.x1, anno.drag.y1] = aPos(e); annoDraw();
+};
+$("#aCanvas").onpointerup = () => {
+  const d = anno.drag; anno.drag = null;
+  if(!d) return;
+  const x = Math.min(d.x0,d.x1)/anno.scale, y = Math.min(d.y0,d.y1)/anno.scale;
+  const w = Math.abs(d.x1-d.x0)/anno.scale, h = Math.abs(d.y1-d.y0)/anno.scale;
+  if(w >= 4 && h >= 4){
+    if(!anno.boxes.has(anno.idx)) anno.boxes.set(anno.idx, []);
+    anno.boxes.get(anno.idx).push({x, y, w, h, cls:anno.cls});
+  }
+  annoShow(anno.idx);
+};
+$("#aUndo").onclick = () => { (anno.boxes.get(anno.idx)||[]).pop(); annoShow(anno.idx); };
+$("#aPrev").onclick = () => annoShow(anno.idx-1);
+$("#aNext").onclick = () => annoShow(anno.idx+1);
+$("#aClose").onclick = () => $("#anno").classList.remove("on");
+addEventListener("keydown", e => {
+  if(!$("#anno").classList.contains("on") || e.target.tagName === "INPUT") return;
+  if(e.key === "ArrowRight") annoShow(anno.idx+1);
+  if(e.key === "ArrowLeft") annoShow(anno.idx-1);
+  if(e.key === "z") $("#aUndo").click();
+  if(e.key === "Escape") $("#aClose").click();
+});
+async function annoCoco(){
+  const images = [], annotations = [], cats = [];
+  const catId = new Map();
+  let aid = 1, iid = 0;
+  for(const [i, list] of [...anno.boxes.entries()].sort((a,b)=>a[0]-b[0])){
+    if(!list.length) continue;
+    const bmp = await createImageBitmap(anno.imgs[i]);
+    images.push({id:++iid, file_name:anno.imgs[i].name, width:bmp.width, height:bmp.height,
+                 license:0, date_captured:""});
+    bmp.close();
+    for(const b of list){
+      if(!catId.has(b.cls)){ catId.set(b.cls, catId.size+1);
+        cats.push({id:catId.size, name:b.cls, supercategory:"defect"}); }
+      const [x,y,w,h] = [b.x,b.y,b.w,b.h].map(Math.round);
+      annotations.push({id:aid++, image_id:iid, category_id:catId.get(b.cls),
+        bbox:[x,y,w,h], area:w*h, iscrowd:0,
+        segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]]});
+    }
+  }
+  return {info:{description:"annotated in DefectForge"}, licenses:[{id:0,name:"",url:""}],
+          categories:cats, images, annotations};
+}
+$("#aSave").onclick = async () => {
+  const coco = await annoCoco();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([JSON.stringify(coco, null, 1)],
+    {type:"application/json"}));
+  a.download = "_annotations.coco.json"; a.click();
+  URL.revokeObjectURL(a.href);
+};
+$("#aDone").onclick = async () => {
+  const coco = await annoCoco();
+  if(!coco.annotations.length) return $("#aClose").click();
+  state.cats = coco.categories;
+  state.catId = new Map(coco.categories.map(c => [c.name, c.id]));
+  state.testImages = []; state.testAnns = []; state.exemplars = [];
+  const byName = new Map(anno.imgs.map(f => [f.name, f]));
+  const counts = new Map(), names = new Map(coco.categories.map(c => [c.id, c.name]));
+  for(const im of coco.images)
+    state.testImages.push({file:byName.get(im.file_name), w:im.width, h:im.height,
+                           name:im.file_name});
+  const imgName = new Map(coco.images.map(im => [im.id, im.file_name]));
+  for(const a of coco.annotations){
+    state.testAnns.push({img:imgName.get(a.image_id), cat:a.category_id, bbox:a.bbox,
+                         seg:a.segmentation, iscrowd:0});
+    if(a.bbox[2] >= 6 && a.bbox[3] >= 6){
+      const n = names.get(a.category_id);
+      state.exemplars.push({file:byName.get(imgName.get(a.image_id)), bbox:a.bbox,
+                            cat:a.category_id, name:n});
+      counts.set(n, (counts.get(n)||0)+1);
+    }
+  }
+  $("#anno").classList.remove("on");
+  $("#annInfo").textContent = `annotated here: ${state.testImages.length} image(s), `+
+    `${state.testAnns.length} annotation(s), ${state.cats.length} class(es) → test split. `+
+    `Use "save COCO json" next time to skip redoing this.`;
+  renderClasses(counts); ready();
+};
+
 /* ---------- lightbox: inspect one result full-size ---------- */
 let lightR = null, lightURLs = [];
 const light = $("#light");

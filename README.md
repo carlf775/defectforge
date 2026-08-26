@@ -34,7 +34,9 @@ Categories are unified across every split, so the synthetic classes line up with
 
 ### Browser (this repo's GitHub Page)
 
-No install. A mandatory guided tour covers the workflow on first visit (re-run it any time with
+No install. No annotations yet? Click **draw them here** to annotate a folder in the built-in
+box annotator (drag boxes, name classes, save the COCO json for next time). A mandatory guided
+tour covers the workflow on first visit (re-run it any time with
 the **Guided tour** button). Paste a Gemini API key, choose the two folders, tick the defect
 classes, pick defect **size** (hairline → large) and **severity** (faint → severe), then
 **Preview 3** — a handful of calls — before paying for a full batch. Click any result to inspect
