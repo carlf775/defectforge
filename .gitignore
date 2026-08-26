@@ -1,0 +1,4 @@
+synthetic/
+*.zip
+__pycache__/
+.venv/

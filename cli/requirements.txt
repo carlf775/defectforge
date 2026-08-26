@@ -1,0 +1,7 @@
+google-genai
+pillow
+numpy
+scipy
+# UI only; on Python 3.9 these pins are required:
+gradio<5
+huggingface_hub<0.26

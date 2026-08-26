@@ -1,0 +1,549 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DefectForge — synthetic defect datasets for Roboflow</title>
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<style>
+:root{
+  --bg:#fbfaf9; --panel:#fff; --ink:#1c1a17; --muted:#6b6660; --line:#e5e1dc;
+  --accent:#c2410c; --accent-ink:#fff; --ok:#15803d; --bad:#b91c1c; --chip:#f3efe9;
+}
+@media (prefers-color-scheme:dark){:root{
+  --bg:#171513; --panel:#211e1b; --ink:#f0ece7; --muted:#a09991; --line:#332f2b;
+  --accent:#e2703a; --accent-ink:#171513; --ok:#4ade80; --bad:#f87171; --chip:#2b2724;}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 28px;max-width:62ch}
+section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
+label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+input[type=text],input[type=password],input[type=number],select,textarea{
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
+  background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
+textarea{resize:vertical;min-height:56px}
+.grid{display:grid;gap:14px}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:720px){.g2,.g3,.g4{grid-template-columns:1fr}}
+button{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);
+  background:var(--chip);color:var(--ink);padding:9px 16px;cursor:pointer}
+button:hover{border-color:var(--muted)}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.drop{border:1.5px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted);cursor:pointer}
+.drop:hover{border-color:var(--accent);color:var(--ink)}
+.drop b{color:var(--ink)}
+input[type=file]{display:none}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.chip{display:flex;align-items:center;gap:7px;background:var(--chip);border:1px solid var(--line);
+  border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;user-select:none}
+.chip input{margin:0}
+.chip .n{color:var(--muted);font-variant-numeric:tabular-nums}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px}
+.thumbs figure{margin:0;flex:0 0 auto;text-align:center}
+.thumbs img{height:72px;border-radius:6px;border:1px solid var(--line);display:block}
+.thumbs figcaption{font-size:11px;color:var(--muted);margin-top:3px}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:14px}
+.card{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--bg);position:relative}
+.card img{width:100%;display:block}
+.card .meta{padding:6px 8px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
+.card .x{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border:0;
+  border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.5}
+.bar{height:6px;background:var(--chip);border-radius:99px;overflow:hidden;margin:12px 0 8px}
+.bar>div{height:100%;background:var(--accent);width:0;transition:width .3s}
+.log{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+  max-height:120px;overflow:auto;white-space:pre-wrap;margin-top:8px}
+.note{font-size:13px;color:var(--muted);margin-top:10px}
+.warn{border-left:3px solid var(--accent);padding-left:12px}
+code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12.5px}
+a{color:var(--accent)}
+.stat{font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>DefectForge</h1>
+<p class="sub">Your annotated defect images become the <b>test</b> split, untouched. Your good
+(defect-free) images are the bases Gemini paints new defects onto for <b>train</b> and <b>valid</b>.
+Every box is <i>measured</i> from the pixels that actually changed — never guessed from what the model
+says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in this tab.</p>
+
+<section>
+  <h2>1 · Gemini</h2>
+  <div class="grid g2">
+    <div>
+      <label for="key">API key <span style="opacity:.7">(stays in this browser)</span></label>
+      <input id="key" type="password" placeholder="AIza…" autocomplete="off">
+    </div>
+    <div>
+      <label for="model">Model</label>
+      <select id="model">
+        <option value="gemini-2.5-flash-image">gemini-2.5-flash-image (Nano Banana)</option>
+        <option value="gemini-3-pro-image-preview">gemini-3-pro-image-preview (Nano Banana Pro)</option>
+      </select>
+    </div>
+  </div>
+  <p class="note warn">The key is sent from your browser straight to Google and saved in this
+  browser's localStorage only. Anyone with access to this machine can read it. Restrict the key to
+  this site's domain in Google AI Studio, and never commit it to the repo.</p>
+</section>
+
+<section>
+  <h2>2 · Input</h2>
+  <div class="grid g2">
+    <div>
+      <label>Annotated defects — folder with images + COCO json</label>
+      <div class="drop" id="dropAnn"><b>Choose folder</b><br>a Roboflow COCO export works as-is</div>
+      <input type="file" id="fAnn" webkitdirectory directory multiple>
+      <div id="annInfo" class="note"></div>
+    </div>
+    <div>
+      <label>Good items — folder of defect-free images, no annotations</label>
+      <div class="drop" id="dropGood"><b>Choose folder</b><br>these become the bases</div>
+      <input type="file" id="fGood" webkitdirectory directory multiple>
+      <div id="goodInfo" class="note"></div>
+    </div>
+  </div>
+  <div id="classBox" hidden>
+    <label style="margin-top:16px">Defects to generate — untick to leave one out, the number is how
+      many real examples it can imitate</label>
+    <div class="chips" id="chips"></div>
+    <div class="thumbs" id="thumbs"></div>
+  </div>
+</section>
+
+<section>
+  <h2>3 · Settings</h2>
+  <div class="grid g4">
+    <div><label for="ntrain">train images</label><input id="ntrain" type="number" value="120" min="0"></div>
+    <div><label for="nvalid">valid images</label><input id="nvalid" type="number" value="30" min="0"></div>
+    <div><label for="mind">min defects / image</label><input id="mind" type="number" value="1" min="1" max="5"></div>
+    <div><label for="maxd">max defects / image</label><input id="maxd" type="number" value="2" min="1" max="5"></div>
+  </div>
+  <div class="grid g3" style="margin-top:14px">
+    <div><label for="conc">parallel requests</label><input id="conc" type="number" value="4" min="1" max="12"></div>
+    <div><label for="retries">retries per defect</label><input id="retries" type="number" value="2" min="0" max="5"></div>
+    <div><label for="seed">seed</label><input id="seed" type="number" value="1"></div>
+  </div>
+  <div style="margin-top:14px">
+    <label for="hint">Extra prompt hint (optional)</label>
+    <textarea id="hint" placeholder="e.g. defects should sit on the weld seam and be slightly out of focus"></textarea>
+  </div>
+  <p class="note" id="estimate"></p>
+</section>
+
+<section>
+  <h2>4 · Generate</h2>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="primary" id="go" disabled>Generate</button>
+    <button id="stop" disabled>Stop</button>
+    <button id="zip" disabled>Download Roboflow zip</button>
+    <span class="note stat" id="counter"></span>
+  </div>
+  <div class="bar"><div id="prog"></div></div>
+  <div class="log" id="log"></div>
+  <div class="cards" id="cards"></div>
+  <p class="note">Red box = the annotation that will be written to COCO. Drop anything that looks
+  wrong — dropped images never reach the zip.</p>
+</section>
+
+<p class="note">Unzip check: <code>train/</code>, <code>valid/</code>, <code>test/</code>, each with
+<code>_annotations.coco.json</code> — drag the zip into Roboflow and the splits are preserved.
+<a href="#" id="st">run self-test</a></p>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const CELLS = ["top-left","top-center","top-right","middle-left","center","middle-right",
+               "bottom-left","bottom-center","bottom-right"];
+const IMG_RE = /\.(jpe?g|png|bmp|webp)$/i;
+
+const PROMPT = (cat, region, size, hint) =>
+`You are producing training data for an automated visual defect-inspection system.
+
+Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.
+
+Edit image 1 so the item has exactly one realistic "${cat}" defect of the same type, appearance and
+texture as image 2, in the ${region} area of the item. The defect should span roughly ${size}% of the
+image width.${hint ? " " + hint.trim() : ""}
+
+Critical: change nothing else. Same camera angle, framing, crop, zoom, lighting, white balance,
+colours, background and resolution as image 1. Every pixel outside the defect must stay identical.
+Do not restyle, do not clean up, do not add text, labels, arrows or watermarks.`;
+
+const state = {cats:[], catId:new Map(), testImages:[], testAnns:[], exemplars:[], goods:[], results:[]};
+let running = false, abort = false;
+
+/* ---------- tiny helpers ---------- */
+const log = m => { const el = $("#log"); el.textContent += m + "\n"; el.scrollTop = 1e9; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
+  t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+const pick = (rnd, arr) => arr[Math.floor(rnd()*arr.length)];
+const randint = (rnd,a,b) => a + Math.floor(rnd()*(b-a+1));
+const canvasOf = src => {const c=document.createElement("canvas");c.width=src.width;c.height=src.height;
+  c.getContext("2d").drawImage(src,0,0);return c};
+const resizeTo = (src,w,h) => {const c=document.createElement("canvas");c.width=w;c.height=h;
+  c.getContext("2d").drawImage(src,0,0,w,h);return c};
+const toBlob = (c,q=0.92) => new Promise(r => c.toBlob(r,"image/jpeg",q));
+const toB64 = blob => new Promise(r => {const f=new FileReader();
+  f.onload=()=>r(f.result.split(",")[1]);f.readAsDataURL(blob)});
+
+/* ---------- measurement: what actually changed ---------- */
+function imageDataAt(canvas, s){
+  const c = document.createElement("canvas");
+  c.width = Math.max(1,Math.round(canvas.width*s)); c.height = Math.max(1,Math.round(canvas.height*s));
+  const x = c.getContext("2d"); x.drawImage(canvas,0,0,c.width,c.height);
+  return x.getImageData(0,0,c.width,c.height);
+}
+function morph(mask,w,h,keep){            // keep=9 erode(3x3), keep=1 dilate(3x3)
+  const out = new Uint8Array(w*h);
+  for(let y=0;y<h;y++) for(let x=0;x<w;x++){
+    let n=0;
+    for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+      const yy=y+dy, xx=x+dx;
+      if(yy<0||xx<0||yy>=h||xx>=w){ if(keep===9) n=-99; continue; }
+      n += mask[yy*w+xx];
+    }
+    out[y*w+x] = (keep===9 ? (n===9?1:0) : (n>=1?1:0));
+  }
+  return out;
+}
+function diffBBox(before, after){
+  if(before.width!==after.width || before.height!==after.height) return null;
+  const s = Math.min(1, 512/Math.max(before.width,before.height));
+  const A = imageDataAt(before,s), B = imageDataAt(after,s);
+  const w=A.width, h=A.height, n=w*h, d=new Uint8Array(n);
+  let max=0;
+  for(let i=0;i<n;i++){
+    const j=i*4;
+    const ga=(A.data[j]*299+A.data[j+1]*587+A.data[j+2]*114)/1000;
+    const gb=(B.data[j]*299+B.data[j+1]*587+B.data[j+2]*114)/1000;
+    const v=Math.abs(ga-gb)|0; d[i]=v; if(v>max) max=v;
+  }
+  if(max < 12) return null;                       // nothing changed
+  const thr = Math.max(12, max*0.4);
+  let m = new Uint8Array(n);
+  for(let i=0;i<n;i++) m[i] = d[i]>=thr ? 1 : 0;
+  m = morph(morph(m,w,h,9),w,h,1);                // opening: kill speckle + recompression noise
+  // largest connected component
+  const seen = new Uint8Array(n), stack = new Int32Array(n);
+  let best = null, bestSize = 0;
+  for(let i=0;i<n;i++){
+    if(!m[i] || seen[i]) continue;
+    let sp=0, size=0; stack[sp++]=i; seen[i]=1;
+    let x0=w,y0=h,x1=-1,y1=-1;
+    while(sp){
+      const p=stack[--sp], px=p%w, py=(p-px)/w; size++;
+      if(px<x0)x0=px; if(px>x1)x1=px; if(py<y0)y0=py; if(py>y1)y1=py;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const xx=px+dx, yy=py+dy;
+        if(xx<0||yy<0||xx>=w||yy>=h) continue;
+        const q=yy*w+xx;
+        if(m[q] && !seen[q]){ seen[q]=1; stack[sp++]=q; }
+      }
+    }
+    if(size>bestSize){ bestSize=size; best=[x0,y0,x1-x0+1,y1-y0+1]; }
+  }
+  if(!best) return null;
+  const k = 1/s;
+  return [Math.round(best[0]*k), Math.round(best[1]*k),
+          Math.round(best[2]*k), Math.round(best[3]*k)];
+}
+const plausible = (box,w,h) => {
+  if(!box) return false;
+  const frac = (box[2]*box[3])/(w*h);
+  return frac>=5e-5 && frac<=0.25 && box[2]>=4 && box[3]>=4;   // reject global restyle & noise
+};
+
+/* ---------- input ---------- */
+$("#dropAnn").onclick = () => $("#fAnn").click();
+$("#dropGood").onclick = () => $("#fGood").click();
+
+$("#fGood").onchange = e => {
+  state.goods = [...e.target.files].filter(f => IMG_RE.test(f.name));
+  $("#goodInfo").textContent = `${state.goods.length} good image(s)`;
+  ready();
+};
+
+$("#fAnn").onchange = async e => {
+  const files = [...e.target.files];
+  const byPath = new Map(files.map(f => [f.webkitRelativePath || f.name, f]));
+  const jsons = files.filter(f => f.name.endsWith(".json"));
+  if(!jsons.length){ $("#annInfo").textContent = "no COCO .json found in that folder"; return; }
+  state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[]; state.exemplars=[];
+  const counts = new Map();
+  for(const jf of jsons){
+    let coco; try{ coco = JSON.parse(await jf.text()); }catch{ continue; }
+    if(!coco.annotations || !coco.images) continue;
+    const dir = (jf.webkitRelativePath || jf.name).split("/").slice(0,-1).join("/");
+    const names = new Map((coco.categories||[]).map(c => [c.id, c.name]));
+    const imgs = new Map();
+    for(const im of coco.images){
+      const f = byPath.get(dir ? `${dir}/${im.file_name}` : im.file_name);
+      if(f) imgs.set(im.id, {file:f, w:im.width, h:im.height,
+                             name:(dir ? dir+"/" : "").replace(/^[^/]*\//,"")
+                                  .replace(/\//g,"_") + im.file_name});
+    }
+    for(const a of coco.annotations){
+      const im = imgs.get(a.image_id), name = names.get(a.category_id);
+      if(!im || !name) continue;
+      if(!state.catId.has(name)){
+        state.catId.set(name, state.catId.size+1);
+        state.cats.push({id:state.catId.size, name, supercategory:"defect"});
+      }
+      const cid = state.catId.get(name);
+      const [x,y,w,h] = a.bbox.map(v => Math.round(v));
+      state.testAnns.push({img:im.name, cat:cid, bbox:[x,y,w,h],
+                           seg:a.segmentation, iscrowd:a.iscrowd||0});
+      if(w>=6 && h>=6){
+        state.exemplars.push({file:im.file, bbox:[x,y,w,h], cat:cid, name});
+        counts.set(name,(counts.get(name)||0)+1);
+      }
+    }
+    for(const im of imgs.values())
+      if(!state.testImages.some(t => t.name===im.name)) state.testImages.push(im);
+  }
+  $("#annInfo").textContent =
+    `${state.testImages.length} image(s), ${state.testAnns.length} annotation(s), ` +
+    `${state.cats.length} class(es) → test split`;
+  renderClasses(counts);
+  ready();
+};
+
+function renderClasses(counts){
+  const chips = $("#chips"); chips.innerHTML = "";
+  [...counts.entries()].sort((a,b)=>b[1]-a[1]).forEach(([name,n]) => {
+    const l = document.createElement("label"); l.className = "chip";
+    l.innerHTML = `<input type="checkbox" checked value="${name}"> ${name} <span class="n">${n}</span>`;
+    l.querySelector("input").onchange = ready;
+    chips.appendChild(l);
+  });
+  const th = $("#thumbs"); th.innerHTML = "";
+  const step = Math.max(1, Math.floor(state.exemplars.length/16));
+  state.exemplars.filter((_,i)=>i%step===0).slice(0,16).forEach(async ex => {
+    const fig = document.createElement("figure");
+    fig.innerHTML = `<img><figcaption>${ex.name}</figcaption>`;
+    th.appendChild(fig);
+    fig.querySelector("img").src = (await cropCanvas(ex)).toDataURL("image/jpeg",0.8);
+  });
+  $("#classBox").hidden = false;
+}
+const chosen = () => [...document.querySelectorAll("#chips input:checked")].map(i=>i.value);
+
+function ready(){
+  const ok = state.exemplars.length && state.goods.length && chosen().length && $("#key").value.trim();
+  $("#go").disabled = !ok || running;
+  const n = (+$("#ntrain").value||0) + (+$("#nvalid").value||0);
+  const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
+  $("#estimate").textContent = `${n} images to generate · about ${Math.round(n*avg)} Gemini image calls`;
+}
+["#key","#ntrain","#nvalid","#mind","#maxd"].forEach(s => $(s).oninput = ready);
+$("#key").value = localStorage.getItem("df_key") || "";
+$("#key").oninput = () => { localStorage.setItem("df_key", $("#key").value); ready(); };
+$("#model").value = localStorage.getItem("df_model") || "gemini-2.5-flash-image";
+$("#model").onchange = () => localStorage.setItem("df_model", $("#model").value);
+
+async function cropCanvas(ex, pad=0.35){
+  const bmp = await createImageBitmap(ex.file);
+  const [x,y,w,h] = ex.bbox, px = Math.round(w*pad), py = Math.round(h*pad);
+  const x0 = Math.max(0,x-px), y0 = Math.max(0,y-py);
+  const x1 = Math.min(bmp.width,x+w+px), y1 = Math.min(bmp.height,y+h+py);
+  const c = document.createElement("canvas");
+  c.width = Math.max(1,x1-x0); c.height = Math.max(1,y1-y0);
+  c.getContext("2d").drawImage(bmp, x0,y0,c.width,c.height, 0,0,c.width,c.height);
+  bmp.close();
+  return c;
+}
+
+/* ---------- gemini ---------- */
+async function edit(baseCanvas, cropCanvasEl, cat, region, size, hint){
+  const [b1,b2] = await Promise.all([toBlob(baseCanvas), toBlob(cropCanvasEl)]);
+  const [d1,d2] = await Promise.all([toB64(b1), toB64(b2)]);
+  const model = $("#model").value;
+  const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
+    method:"POST",
+    headers:{"Content-Type":"application/json","x-goog-api-key":$("#key").value.trim()},
+    body: JSON.stringify({contents:[{parts:[
+      {text: PROMPT(cat, region, size, hint)},
+      {inlineData:{mimeType:"image/jpeg", data:d1}},
+      {inlineData:{mimeType:"image/jpeg", data:d2}}]}]})
+  });
+  const j = await r.json();
+  if(!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  const part = (j.candidates?.[0]?.content?.parts || [])
+    .find(p => (p.inlineData||p.inline_data)?.data);
+  if(!part) throw new Error(j.candidates?.[0]?.finishReason || "no image returned");
+  const raw = (part.inlineData||part.inline_data).data;
+  const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
+  return await createImageBitmap(new Blob([bytes]));
+}
+
+/* ---------- generation ---------- */
+async function generateOne(split, idx, weights, hint){
+  const rnd = mulberry32((+$("#seed").value||1)*7919 + idx*104729 + (split==="valid"?13:0));
+  const bmp = await createImageBitmap(pick(rnd, state.goods));
+  let cur = canvasOf(bmp); bmp.close();
+  const boxes = [];
+  const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
+  const retries = +$("#retries").value||0;
+  for(let d=0; d<k && !abort; d++){
+    const ex = pick(rnd, weights);
+    const crop = await cropCanvas(ex);
+    const region = pick(rnd, CELLS), size = randint(rnd, 4, 18);
+    for(let att=0; att<=retries && !abort; att++){
+      let out;
+      try{ out = await edit(cur, crop, ex.name, region, size, hint); }
+      catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
+      let oc = canvasOf(out); out.close();
+      if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
+      const box = diffBBox(cur, oc);
+      if(plausible(box, cur.width, cur.height)){ boxes.push({cat:ex.cat, name:ex.name, box}); cur = oc; break; }
+      log(`  · ${split} ${idx}: no usable change, retrying`);
+    }
+  }
+  if(!boxes.length) return null;
+  return {split, name:`synth_${split}_${String(idx).padStart(5,"0")}.jpg`,
+          blob: await toBlob(cur), w:cur.width, h:cur.height, boxes,
+          thumb: previewURL(cur, boxes)};
+}
+function previewURL(canvas, boxes){
+  const s = Math.min(1, 420/canvas.width);
+  const c = resizeTo(canvas, Math.round(canvas.width*s), Math.round(canvas.height*s));
+  const x = c.getContext("2d");
+  x.strokeStyle = "#ff2d2d"; x.lineWidth = Math.max(2, 3*s); x.font = "12px sans-serif";
+  x.fillStyle = "#ff2d2d";
+  for(const b of boxes){
+    x.strokeRect(b.box[0]*s, b.box[1]*s, b.box[2]*s, b.box[3]*s);
+    x.fillText(b.name, b.box[0]*s+3, Math.max(11, b.box[1]*s-3));
+  }
+  return c.toDataURL("image/jpeg", 0.75);
+}
+function addCard(r){
+  const el = document.createElement("div");
+  el.className = "card";
+  el.innerHTML = `<img src="${r.thumb}"><div class="meta"><span>${r.split}</span>
+    <span>${r.boxes.map(b=>b.name).join(", ")}</span></div>
+    <button class="x">drop</button>`;
+  el.querySelector(".x").onclick = () => {
+    state.results = state.results.filter(x => x !== r); el.remove(); counter();
+  };
+  $("#cards").prepend(el);
+}
+const counter = () => $("#counter").textContent =
+  `${state.results.length} kept · ${state.results.reduce((n,r)=>n+r.boxes.length,0)} annotations`;
+
+async function run(){
+  running = true; abort = false;
+  $("#go").disabled = $("#zip").disabled = true; $("#stop").disabled = false;
+  const picked = new Set(chosen());
+  const weights = state.exemplars.filter(e => picked.has(e.name));   // natural mix within selection
+  const hint = $("#hint").value;
+  const jobs = [];
+  for(let i=0;i<(+$("#ntrain").value||0);i++) jobs.push(["train",i]);
+  for(let i=0;i<(+$("#nvalid").value||0);i++) jobs.push(["valid",i]);
+  let done = 0;
+  const worker = async () => {
+    while(jobs.length && !abort){
+      const [split,i] = jobs.shift();
+      try{
+        const r = await generateOne(split, i, weights, hint);
+        if(r){ state.results.push(r); addCard(r); }
+        else log(`  × ${split} ${i}: no usable defect, skipped`);
+      }catch(e){ log(`  ! ${split} ${i}: ${e.message}`); }
+      done++; counter();
+      $("#prog").style.width = (100*done/(done+jobs.length)) + "%";
+    }
+  };
+  await Promise.all(Array.from({length:+$("#conc").value||4}, worker));
+  running = false; $("#stop").disabled = true; $("#zip").disabled = !state.results.length;
+  log(abort ? "stopped" : "done");
+  ready();
+}
+$("#go").onclick = run;
+$("#stop").onclick = () => { abort = true; log("stopping after in-flight requests…"); };
+
+/* ---------- export ---------- */
+function coco(desc, images, annotations){
+  return JSON.stringify({
+    info:{description:desc, version:"1", year:new Date().getFullYear()},
+    licenses:[{id:0, name:"synthetic", url:""}],
+    categories: state.cats, images, annotations}, null, 1);
+}
+$("#zip").onclick = async () => {
+  $("#zip").disabled = true; log("zipping…");
+  const z = new JSZip();
+  for(const split of ["train","valid"]){
+    const rs = state.results.filter(r => r.split===split);
+    if(!rs.length) continue;
+    const images=[], anns=[]; let aid=1;
+    rs.forEach((r,i) => {
+      images.push({id:i+1, file_name:r.name, width:r.w, height:r.h, license:0, date_captured:""});
+      for(const b of r.boxes){
+        const [x,y,w,h] = b.box;
+        anns.push({id:aid++, image_id:i+1, category_id:b.cat, bbox:[x,y,w,h], area:w*h, iscrowd:0,
+                   segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]]});
+      }
+      z.file(`${split}/${r.name}`, r.blob);
+    });
+    z.file(`${split}/_annotations.coco.json`, coco(`synthetic ${split}`, images, anns));
+  }
+  if(state.testImages.length){
+    const images=[], anns=[]; let aid=1; const idOf=new Map();
+    for(const [i,im] of state.testImages.entries()){
+      let {w,h} = im;
+      if(!w || !h){ const b = await createImageBitmap(im.file); w=b.width; h=b.height; b.close(); }
+      idOf.set(im.name, i+1);
+      images.push({id:i+1, file_name:im.name, width:w, height:h, license:0, date_captured:""});
+      z.file(`test/${im.name}`, im.file);
+    }
+    for(const a of state.testAnns){
+      const id = idOf.get(a.img); if(!id) continue;
+      const [x,y,w,h] = a.bbox;
+      anns.push({id:aid++, image_id:id, category_id:a.cat, bbox:[x,y,w,h], area:w*h,
+                 iscrowd:a.iscrowd,
+                 segmentation:a.seg?.length ? a.seg : [[x,y, x+w,y, x+w,y+h, x,y+h]]});
+    }
+    z.file("test/_annotations.coco.json", coco("real (held out)", images, anns));
+  }
+  const blob = await z.generateAsync({type:"blob"}, m =>
+    $("#prog").style.width = m.percent + "%");
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = "defectforge-dataset.zip"; a.click();
+  URL.revokeObjectURL(a.href);
+  log(`zip ready · ${(blob.size/1e6).toFixed(1)} MB`);
+  $("#zip").disabled = false;
+};
+
+/* ---------- self-test: does the measurement actually measure? ---------- */
+window.selfTest = function(){
+  const c = document.createElement("canvas"); c.width=320; c.height=240;
+  const x = c.getContext("2d");
+  const im = x.createImageData(320,240);
+  for(let i=0;i<im.data.length;i+=4){
+    const v = 90 + ((i*2654435761 >>> 24) % 40);
+    im.data[i]=im.data[i+1]=im.data[i+2]=v; im.data[i+3]=255;
+  }
+  x.putImageData(im,0,0);
+  const after = canvasOf(c), ax = after.getContext("2d");
+  ax.fillStyle="#141414"; ax.beginPath(); ax.ellipse(130,85,30,25,0,0,7); ax.fill();
+  const box = diffBBox(c, after);
+  const near = (a,b,t)=>Math.abs(a-b)<=t;
+  const okBox = box && near(box[0],100,8) && near(box[1],60,8) && near(box[2],61,12) && near(box[3],51,12);
+  const okSame = diffBBox(c, canvasOf(c)) === null;
+  const shift = canvasOf(c), sx = shift.getContext("2d");
+  sx.globalAlpha=0.25; sx.fillStyle="#fff"; sx.fillRect(0,0,320,240);
+  const okGlobal = !plausible(diffBBox(c, shift), 320, 240);
+  const msg = `bbox ${JSON.stringify(box)} ${okBox?"ok":"FAIL"} · unchanged ${okSame?"ok":"FAIL"}`
+            + ` · global restyle rejected ${okGlobal?"ok":"FAIL"}`;
+  log(msg);
+  return okBox && okSame && okGlobal ? "PASS " + msg : "FAIL " + msg;
+};
+$("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
+ready();
+</script>
+</body>
+</html>
