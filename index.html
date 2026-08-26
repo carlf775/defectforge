@@ -177,8 +177,10 @@ Every mask measured from the pixels that changed.</p>
   <h2><i>1</i>Gemini</h2>
   <div class="grid g2">
     <div>
-      <label for="key">API key <span style="opacity:.7">(stays in this browser)</span> ·
-        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">get one here</a></label>
+      <label for="key" style="display:flex;gap:6px;align-items:baseline">API key
+        <span style="opacity:.7">(stays in this browser)</span>
+        <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
+           style="margin-left:auto" onclick="event.stopPropagation()">get one here ↗</a></label>
       <input id="key" type="password" placeholder="AIza…" autocomplete="off">
       <details class="mini">
         <summary>How to get a key (30 seconds)</summary>
