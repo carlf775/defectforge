@@ -3,7 +3,7 @@
 Turn a handful of annotated defect photos plus a pile of good-item photos into a full
 synthetic defect-detection dataset in COCO format, ready to drop into Roboflow.
 
-**[Open the tool →](https://USER.github.io/defectforge/)** *(runs entirely in your browser)*
+**[Open the tool →](https://carlf775.github.io/defectforge/)** *(runs entirely in your browser)*
 
 ```
 your annotated defects  ──►  test  split   (kept real, untouched)
@@ -66,7 +66,7 @@ Overlays of every generated box land in `synthetic/preview/` — look at those b
 ## Publishing to GitHub Pages
 
 Settings → Pages → Source: *Deploy from a branch* → `main` / `/ (root)`. There is no build step;
-`index.html` is the whole app. Replace `USER` in the link above with your GitHub username.
+`index.html` is the whole app. 
 
 ## Limits worth knowing
 
