@@ -3,80 +3,167 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>DefectForge — synthetic defect datasets for Roboflow</title>
-<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://generativelanguage.googleapis.com; base-uri 'none'; form-action 'none'">
+<title>DefectForge — synthetic defect datasets</title>
+<link rel="icon" href="vendor/deepvis-mark.svg">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Fira+Sans:wght@400;500;600&display=swap">
+<script src="vendor/jszip.min.js"></script>
 <style>
 :root{
-  --bg:#fbfaf9; --panel:#fff; --ink:#1c1a17; --muted:#6b6660; --line:#e5e1dc;
-  --accent:#c2410c; --accent-ink:#fff; --ok:#15803d; --bad:#b91c1c; --chip:#f3efe9;
+  --bg:#3f4347; --card:rgba(0,0,0,.12); --popover:#34373a; --ink:#f0f2f5;
+  --muted:#aab0b5; --line:rgba(255,255,255,.10); --input:rgba(255,255,255,.07);
+  --accent:#c8ccd0; --accent-ink:#1f2225; --accent-deep:#9ba1a6;
+  --ok:#70c1a3; --bad:#e57373; --radius:.375rem;
+  --display:"DM Sans",system-ui,sans-serif; --body:"Fira Sans",system-ui,sans-serif;
 }
-@media (prefers-color-scheme:dark){:root{
-  --bg:#171513; --panel:#211e1b; --ink:#f0ece7; --muted:#a09991; --line:#332f2b;
-  --accent:#e2703a; --accent-ink:#171513; --ok:#4ade80; --bad:#f87171; --chip:#2b2724;}}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif}
-.wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
-h1{font-size:26px;margin:0 0 4px;letter-spacing:-.02em}
-h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 12px}
-.sub{color:var(--muted);margin:0 0 28px;max-width:62ch}
-section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:20px;margin-bottom:16px}
-label{display:block;font-size:13px;color:var(--muted);margin-bottom:5px}
+html{color-scheme:dark}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--body);
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1040px;margin:0 auto;padding:40px 22px 90px}
+header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
+header svg{width:30px;height:auto;flex:0 0 auto}
+header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
+header .tag{margin-left:auto;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted)}
+.sub{color:var(--muted);margin:0 0 30px;max-width:64ch;font-size:14.5px}
+.sub b{color:var(--ink);font-weight:600}
+section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+  padding:22px;margin-bottom:14px}
+h2{font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 16px;display:flex;align-items:center;gap:9px}
+h2 i{font-style:normal;width:19px;height:19px;border-radius:99px;background:var(--input);
+  color:var(--ink);display:grid;place-items:center;font-size:11px;letter-spacing:0}
+label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px}
 input[type=text],input[type=password],input[type=number],select,textarea{
-  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:8px;
-  background:var(--bg);color:var(--ink);font:inherit;font-size:14px}
-textarea{resize:vertical;min-height:56px}
+  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);
+  background:var(--input);color:var(--ink);font:inherit;font-size:14px;outline:none}
+input:focus,select:focus,textarea:focus{border-color:var(--accent-deep);
+  box-shadow:0 0 0 2px rgba(200,204,208,.14)}
+textarea{resize:vertical;min-height:54px}
 .grid{display:grid;gap:14px}
-.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}.g4{grid-template-columns:repeat(4,1fr)}
-@media(max-width:720px){.g2,.g3,.g4{grid-template-columns:1fr}}
-button{font:inherit;font-weight:600;border-radius:8px;border:1px solid var(--line);
-  background:var(--chip);color:var(--ink);padding:9px 16px;cursor:pointer}
-button:hover{border-color:var(--muted)}
+.g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
+.g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr}}
+button{font:600 14px var(--body);border-radius:var(--radius);border:1px solid var(--line);
+  background:var(--input);color:var(--ink);padding:9px 17px;cursor:pointer;transition:.15s}
+button:hover:not(:disabled){border-color:var(--accent-deep);background:rgba(255,255,255,.12)}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
-button:disabled{opacity:.45;cursor:not-allowed}
-.drop{border:1.5px dashed var(--line);border-radius:10px;padding:18px;text-align:center;color:var(--muted);cursor:pointer}
-.drop:hover{border-color:var(--accent);color:var(--ink)}
-.drop b{color:var(--ink)}
+button.primary:hover:not(:disabled){background:var(--accent-deep);border-color:var(--accent-deep)}
+button:disabled{opacity:.4;cursor:not-allowed}
+.drop{border:1px dashed rgba(255,255,255,.22);border-radius:var(--radius);padding:20px;
+  text-align:center;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s}
+.drop:hover{border-color:var(--accent);color:var(--ink);background:var(--input)}
+.drop b{color:var(--ink);font:600 14px var(--display);display:block;margin-bottom:2px}
 input[type=file]{display:none}
-.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
-.chip{display:flex;align-items:center;gap:7px;background:var(--chip);border:1px solid var(--line);
-  border-radius:999px;padding:5px 12px;font-size:13px;cursor:pointer;user-select:none}
-.chip input{margin:0}
-.chip .n{color:var(--muted);font-variant-numeric:tabular-nums}
-.thumbs{display:flex;gap:8px;overflow-x:auto;padding:12px 0 2px}
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
+.chip{display:flex;align-items:center;gap:8px;background:var(--input);border:1px solid var(--line);
+  border-radius:var(--radius);padding:6px 12px;font-size:13px;cursor:pointer;user-select:none}
+.chip:hover{border-color:var(--accent-deep)}
+.chip input{margin:0;accent-color:var(--accent)}
+.chip .dot{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
+.chip .n{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
+.thumbs{display:flex;gap:8px;overflow-x:auto;padding:14px 0 4px}
 .thumbs figure{margin:0;flex:0 0 auto;text-align:center}
-.thumbs img{height:72px;border-radius:6px;border:1px solid var(--line);display:block}
-.thumbs figcaption{font-size:11px;color:var(--muted);margin-top:3px}
-.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:14px}
-.card{border:1px solid var(--line);border-radius:9px;overflow:hidden;background:var(--bg);position:relative}
+.thumbs img{height:70px;border-radius:var(--radius);border:1px solid var(--line);display:block}
+.thumbs figcaption{font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.02em}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;margin-top:16px}
+.card{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
+  background:var(--popover);position:relative}
 .card img{width:100%;display:block}
-.card .meta{padding:6px 8px;font-size:12px;color:var(--muted);display:flex;justify-content:space-between;gap:6px}
-.card .x{position:absolute;top:6px;right:6px;background:rgba(0,0,0,.65);color:#fff;border:0;
-  border-radius:6px;padding:2px 8px;font-size:12px;line-height:1.5}
-.bar{height:6px;background:var(--chip);border-radius:99px;overflow:hidden;margin:12px 0 8px}
-.bar>div{height:100%;background:var(--accent);width:0;transition:width .3s}
-.log{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
-  max-height:120px;overflow:auto;white-space:pre-wrap;margin-top:8px}
-.note{font-size:13px;color:var(--muted);margin-top:10px}
-.warn{border-left:3px solid var(--accent);padding-left:12px}
-code{background:var(--chip);padding:1px 5px;border-radius:4px;font-size:12.5px}
-a{color:var(--accent)}
+.card .meta{padding:7px 9px;font-size:12px;color:var(--muted);display:flex;
+  justify-content:space-between;gap:6px}
+.card .meta b{color:var(--ink);font-weight:500}
+.card .x{position:absolute;top:7px;right:7px;background:rgba(31,34,37,.8);color:var(--ink);
+  border:1px solid var(--line);border-radius:var(--radius);padding:2px 9px;font-size:11.5px}
+.card .x:hover{background:var(--bad);border-color:var(--bad);color:#fff}
+.bar{height:4px;background:var(--input);border-radius:99px;overflow:hidden;margin:16px 0 8px}
+.bar>div{height:100%;background:var(--ok);width:0;transition:width .3s}
+.log{font:11.5px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace;color:var(--muted);
+  max-height:120px;overflow:auto;white-space:pre-wrap}
+.note{font-size:12.5px;color:var(--muted);margin-top:12px}
+.warn{border-left:2px solid var(--ok);padding-left:13px}
+.row{display:flex;gap:11px;flex-wrap:wrap;align-items:center}
+.remember{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted);
+  margin-top:8px;cursor:pointer}
+.remember input{accent-color:var(--accent);margin:0}
+code{background:var(--input);padding:1.5px 6px;border-radius:3px;font-size:12px;
+  font-family:ui-monospace,Menlo,monospace}
+a{color:var(--ok);text-decoration:none;border-bottom:1px solid rgba(112,193,163,.35)}
+a:hover{border-bottom-color:var(--ok)}
 .stat{font-variant-numeric:tabular-nums}
+footer{margin-top:26px;font-size:12.5px;color:var(--muted)}
+header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;background:transparent}
+header .tag{margin-left:14px}
+#mask{position:fixed;inset:0;z-index:100;display:none}
+#mask.on{display:block}
+#spot{position:absolute;border-radius:var(--radius);border:1px solid var(--ok);
+  box-shadow:0 0 0 9999px rgba(24,26,28,.78);transition:top .25s,left .25s,width .25s,height .25s;
+  pointer-events:none}
+#spot.hidden{opacity:0;box-shadow:0 0 0 9999px rgba(24,26,28,.78)}
+#pop{position:fixed;z-index:101;width:min(360px,calc(100vw - 32px));background:var(--popover);
+  border:1px solid var(--line);border-radius:var(--radius);padding:18px 19px;
+  box-shadow:0 18px 44px rgba(0,0,0,.5)}
+#pop h3{font:700 15px/1.3 var(--display);margin:0 0 7px}
+#pop p{margin:0;font-size:13.5px;line-height:1.6;color:var(--muted)}
+#pop p b{color:var(--ink);font-weight:500}
+#pop .nav{display:flex;align-items:center;gap:9px;margin-top:16px}
+#pop .count{font-size:12px;color:var(--muted);font-variant-numeric:tabular-nums;margin-right:auto}
+#pop button{padding:7px 15px;font-size:13px}
+.seg{display:flex;gap:6px;flex-wrap:wrap}
+.seg button{padding:7px 13px;font-size:12.5px;font-weight:500}
+.seg button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.seghint{font-size:12px;color:var(--muted);margin-top:7px;min-height:1.5em}
+.card{cursor:zoom-in}
+.card .tagline{position:absolute;top:7px;left:7px;background:rgba(31,34,37,.82);
+  border:1px solid var(--line);border-radius:var(--radius);padding:1px 7px;font-size:10.5px;
+  letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.card .meta{flex-wrap:wrap;row-gap:2px}
+.card .meta .m{width:100%;font-size:11px;opacity:.85;font-variant-numeric:tabular-nums}
+#light{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.94);display:none;
+  flex-direction:column;padding:18px 20px 20px}
+#light.on{display:flex}
+#light .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+#light .top .who{font:600 15px var(--display)}
+#light .top .m{font-size:12.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+#light .top .sp{margin-left:auto;display:flex;gap:8px}
+#light .stage{flex:1;display:grid;place-items:center;min-height:0}
+#light .frame{position:relative;display:inline-block;max-width:100%;max-height:100%}
+#light .frame img{display:block;max-width:100%;max-height:calc(100vh - 150px);
+  border:1px solid var(--line);border-radius:var(--radius)}
+#light .bx{position:absolute;border:2px solid;border-radius:2px;pointer-events:none}
+#light .bx span{position:absolute;top:-19px;left:-2px;font:600 11px var(--body);white-space:nowrap;
+  text-shadow:0 1px 3px rgba(0,0,0,.9)}
+#light.compare .bx{display:none}
+#light .hint{text-align:center;font-size:12px;color:var(--muted);margin-top:12px}
 </style>
 </head>
 <body>
 <div class="wrap">
-<h1>DefectForge</h1>
+<header>
+  <svg viewBox="0 0 1280 667.76" aria-hidden="true"><g fill="#70c1a3">
+  <path d="M1280,337.58c-26.26,38.5-55.93,74.38-88.56,107.46-31.13,31.59-64.98,60.52-101.14,86.4-98.21,70.31-213.53,118.25-338.53,136.31v-135c2.39-.42,4.79-.85,7.16-1.31,110.67-20.75,211.33-69.9,294.1-139.65.02-.04.06-.06.08-.08.12-.1.25-.19.37-.29,20.98-16.91,40.41-35.11,57.91-53.85-.12-.14-.25.13-.37,0-.15-.17-75.42-72.34-118.82-100.92-.29-.19-.6-.39-.89-.58-67.37-44.2-143.58-76.04-225.38-92.31-4.71-.95-9.42-1.83-14.17-2.66V6.69c125.44,18.14,241.15,66.33,339.59,137.09,35.68,25.61,69.11,54.21,99.87,85.4,32.79,33.2,88.85,108.33,88.77,108.41Z"/>
+  <path d="M695.89,2.01v335.22h-111.77V2.01C602.56.68,621.2,0,640,0s37.44.68,55.89,2.01Z"/>
+  <path d="M0,337.58c26.26,38.5,55.93,74.38,88.56,107.46,31.13,31.59,64.98,60.52,101.14,86.4,98.21,70.31,213.53,118.25,338.53,136.31v-135c-2.39-.42-4.79-.85-7.16-1.31-110.67-20.75-211.33-69.9-294.1-139.65-.02-.04-.06-.06-.08-.08-.12-.1-.25-.19-.37-.29-20.98-16.91-40.41-35.11-57.91-53.85.12-.14.25.13.37,0,.15-.17,75.42-72.34,118.82-100.92.29-.19.6-.39.89-.58,67.37-44.2,143.58-76.04,225.38-92.31,4.71-.95,9.42-1.83,14.17-2.66V6.69c-125.44,18.14-241.15,66.33-339.59,137.09-35.68,25.61-69.11,54.21-99.87,85.4C55.98,262.37-.08,337.5,0,337.58Z"/>
+  </g></svg>
+  <h1>DefectForge</h1>
+  <button id="guide" class="ghost">Guided tour</button>
+  <span class="tag">deepvis</span>
+</header>
 <p class="sub">Your annotated defect images become the <b>test</b> split, untouched. Your good
 (defect-free) images are the bases Gemini paints new defects onto for <b>train</b> and <b>valid</b>.
-Every box is <i>measured</i> from the pixels that actually changed — never guessed from what the model
-says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in this tab.</p>
+Every box is <b>measured</b> from the pixels that actually changed — never guessed from what the
+model says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in this tab.</p>
 
 <section>
-  <h2>1 · Gemini</h2>
+  <h2><i>1</i>Gemini</h2>
   <div class="grid g2">
     <div>
       <label for="key">API key <span style="opacity:.7">(stays in this browser)</span></label>
       <input id="key" type="password" placeholder="AIza…" autocomplete="off">
+      <label class="remember"><input type="checkbox" id="remember">
+        remember on this device</label>
     </div>
     <div>
       <label for="model">Model</label>
@@ -86,13 +173,14 @@ says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in 
       </select>
     </div>
   </div>
-  <p class="note warn">The key is sent from your browser straight to Google and saved in this
-  browser's localStorage only. Anyone with access to this machine can read it. Restrict the key to
-  this site's domain in Google AI Studio, and never commit it to the repo.</p>
+  <p class="note warn">The key goes from this tab straight to Google and nowhere else. Left
+  unremembered it lives in memory only and dies with the tab; tick the box and it is stored in this
+  browser's localStorage, where anyone using this machine can read it. Restrict the key to this
+  site's domain in Google AI Studio either way.</p>
 </section>
 
 <section>
-  <h2>2 · Input</h2>
+  <h2><i>2</i>Input</h2>
   <div class="grid g2">
     <div>
       <label>Annotated defects — folder with images + COCO json</label>
@@ -116,7 +204,7 @@ says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in 
 </section>
 
 <section>
-  <h2>3 · Settings</h2>
+  <h2><i>3</i>Settings</h2>
   <div class="grid g4">
     <div><label for="ntrain">train images</label><input id="ntrain" type="number" value="120" min="0"></div>
     <div><label for="nvalid">valid images</label><input id="nvalid" type="number" value="30" min="0"></div>
@@ -128,7 +216,26 @@ says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in 
     <div><label for="retries">retries per defect</label><input id="retries" type="number" value="2" min="0" max="5"></div>
     <div><label for="seed">seed</label><input id="seed" type="number" value="1"></div>
   </div>
-  <div style="margin-top:14px">
+  <div class="grid g2" style="margin-top:18px">
+    <div>
+      <label>Defect size — how much of the frame one defect covers</label>
+      <div class="seg" id="segSize">
+        <button data-v="hairline">Hairline</button><button data-v="small">Small</button>
+        <button data-v="medium">Medium</button><button data-v="large">Large</button>
+        <button data-v="mixed" class="on">Mixed</button>
+      </div>
+      <div class="seghint" id="hintSize"></div>
+    </div>
+    <div>
+      <label>Severity — how pronounced it looks</label>
+      <div class="seg" id="segSev">
+        <button data-v="faint">Faint</button><button data-v="moderate">Moderate</button>
+        <button data-v="severe">Severe</button><button data-v="mixed" class="on">Mixed</button>
+      </div>
+      <div class="seghint" id="hintSev"></div>
+    </div>
+  </div>
+  <div style="margin-top:16px">
     <label for="hint">Extra prompt hint (optional)</label>
     <textarea id="hint" placeholder="e.g. defects should sit on the weld seam and be slightly out of focus"></textarea>
   </div>
@@ -136,9 +243,10 @@ says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in 
 </section>
 
 <section>
-  <h2>4 · Generate</h2>
-  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
-    <button class="primary" id="go" disabled>Generate</button>
+  <h2><i>4</i>Generate</h2>
+  <div class="row">
+    <button id="try" disabled>Preview 3</button>
+    <button class="primary" id="go" disabled>Generate batch</button>
     <button id="stop" disabled>Stop</button>
     <button id="zip" disabled>Download Roboflow zip</button>
     <span class="note stat" id="counter"></span>
@@ -146,13 +254,29 @@ says. Out comes a zip Roboflow imports with the splits intact. Runs entirely in 
   <div class="bar"><div id="prog"></div></div>
   <div class="log" id="log"></div>
   <div class="cards" id="cards"></div>
-  <p class="note">Red box = the annotation that will be written to COCO. Drop anything that looks
-  wrong — dropped images never reach the zip.</p>
+  <p class="note">Click any image to inspect it full size and flip between the original and the
+  edit. Each box is the annotation that will be written to COCO. Drop anything that looks wrong —
+  dropped images never reach the zip. <b>%</b> is the measured width of the defect,
+  <b>contrast</b> how strongly those pixels changed.</p>
 </section>
 
-<p class="note">Unzip check: <code>train/</code>, <code>valid/</code>, <code>test/</code>, each with
+<div id="light">
+  <div class="top">
+    <span class="who" id="lWho"></span><span class="m" id="lMeta"></span>
+    <span class="sp">
+      <button id="lDrop">drop</button>
+      <button id="lPrev">‹</button><button id="lNext">›</button>
+      <button id="lClose">close</button>
+    </span>
+  </div>
+  <div class="stage"><div class="frame"><img id="lImg"><div id="lBoxes"></div></div></div>
+  <div class="hint">hold <b>space</b> or press-and-hold the image to see the original ·
+    ←/→ next · <b>x</b> drop · esc close</div>
+</div>
+
+<footer>Unzip check: <code>train/</code>, <code>valid/</code>, <code>test/</code>, each with
 <code>_annotations.coco.json</code> — drag the zip into Roboflow and the splits are preserved.
-<a href="#" id="st">run self-test</a></p>
+<a href="#" id="st">run self-test</a></footer>
 </div>
 
 <script>
@@ -161,20 +285,39 @@ const CELLS = ["top-left","top-center","top-right","middle-left","center","middl
                "bottom-left","bottom-center","bottom-right"];
 const IMG_RE = /\.(jpe?g|png|bmp|webp)$/i;
 
-const PROMPT = (cat, region, size, hint) =>
+const SIZES = {hairline:[1,4], small:[3,8], medium:[7,15], large:[14,28], mixed:[2,25]};
+const SEV = {
+  faint:"Keep it subtle and low-contrast — the kind of fault an inspector could miss at a glance, "+
+        "barely standing out from the surrounding surface.",
+  moderate:"Make it clearly visible but not dramatic, typical of everyday production faults.",
+  severe:"Make it pronounced and unmistakable: deep, high-contrast, obvious damage."};
+const SIZE_HINT = {hairline:"1–4% of the frame. Hardest class to detect, and the one real "+
+  "inspection usually cares about.", small:"3–8%. A good default for surface faults.",
+  medium:"7–15%. Comfortably visible at a glance.", large:"14–28%. Gross damage.",
+  mixed:"2–25%, redrawn per defect. Widest coverage — best unless you know your defect scale."};
+const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually fail on.",
+  moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
+  mixed:"A different severity per defect. Closest to a real production mix."};
+
+const PROMPT = (cat, region, size, sev, hint) =>
 `You are producing training data for an automated visual defect-inspection system.
 
 Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.
 
 Edit image 1 so the item has exactly one realistic "${cat}" defect of the same type, appearance and
 texture as image 2, in the ${region} area of the item. The defect should span roughly ${size}% of the
-image width.${hint ? " " + hint.trim() : ""}
+image width. ${sev}${hint ? " " + hint.trim() : ""}
 
 Critical: change nothing else. Same camera angle, framing, crop, zoom, lighting, white balance,
 colours, background and resolution as image 1. Every pixel outside the defect must stay identical.
 Do not restyle, do not clean up, do not add text, labels, arrows or watermarks.`;
 
-const state = {cats:[], catId:new Map(), testImages:[], testAnns:[], exemplars:[], goods:[], results:[]};
+const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
+const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
+const colorForLabel = l => l ? `oklch(0.75 0.28 ${((hashStr(l)*GOLDEN_ANGLE)%360).toFixed(1)})` : "white";
+
+const state = {cats:[], catId:new Map(), testImages:[], testAnns:[], exemplars:[], goods:[],
+               results:[], seq:0, job:0};
 let running = false, abort = false;
 
 /* ---------- tiny helpers ---------- */
@@ -249,9 +392,13 @@ function diffBBox(before, after){
     if(size>bestSize){ bestSize=size; best=[x0,y0,x1-x0+1,y1-y0+1]; }
   }
   if(!best) return null;
+  let sum = 0, cnt = 0;                       // how hard those pixels actually changed
+  for(let y=best[1]; y<best[1]+best[3]; y++)
+    for(let x=best[0]; x<best[0]+best[2]; x++){ sum += d[y*w+x]; cnt++; }
   const k = 1/s;
-  return [Math.round(best[0]*k), Math.round(best[1]*k),
-          Math.round(best[2]*k), Math.round(best[3]*k)];
+  return {box:[Math.round(best[0]*k), Math.round(best[1]*k),
+               Math.round(best[2]*k), Math.round(best[3]*k)],
+          strength: Math.round(sum/Math.max(1,cnt)/255*100)};
 }
 const plausible = (box,w,h) => {
   if(!box) return false;
@@ -318,7 +465,9 @@ function renderClasses(counts){
   const chips = $("#chips"); chips.innerHTML = "";
   [...counts.entries()].sort((a,b)=>b[1]-a[1]).forEach(([name,n]) => {
     const l = document.createElement("label"); l.className = "chip";
-    l.innerHTML = `<input type="checkbox" checked value="${name}"> ${name} <span class="n">${n}</span>`;
+    l.innerHTML = `<input type="checkbox" checked value="${name}">
+      <span class="dot" style="background:${colorForLabel(name)}"></span>
+      ${name} <span class="n">${n}</span>`;
     l.querySelector("input").onchange = ready;
     chips.appendChild(l);
   });
@@ -336,16 +485,36 @@ const chosen = () => [...document.querySelectorAll("#chips input:checked")].map(
 
 function ready(){
   const ok = state.exemplars.length && state.goods.length && chosen().length && $("#key").value.trim();
-  $("#go").disabled = !ok || running;
+  $("#go").disabled = $("#try").disabled = !ok || running;
   const n = (+$("#ntrain").value||0) + (+$("#nvalid").value||0);
   const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
-  $("#estimate").textContent = `${n} images to generate · about ${Math.round(n*avg)} Gemini image calls`;
+  $("#estimate").textContent = `Batch: ${n} images · about ${Math.round(n*avg)} Gemini image calls.`
+    + ` Preview 3 first — it costs about ${Math.round(3*avg)} calls and tells you whether the rest is worth paying for.`;
 }
 ["#key","#ntrain","#nvalid","#mind","#maxd"].forEach(s => $(s).oninput = ready);
-$("#key").value = localStorage.getItem("df_key") || "";
-$("#key").oninput = () => { localStorage.setItem("df_key", $("#key").value); ready(); };
+const KEY = "df_key";
+$("#key").value = localStorage.getItem(KEY) || "";
+$("#remember").checked = !!localStorage.getItem(KEY);
+const saveKey = () => $("#remember").checked
+  ? localStorage.setItem(KEY, $("#key").value) : localStorage.removeItem(KEY);
+$("#key").oninput = () => { saveKey(); ready(); };
+$("#remember").onchange = saveKey;
 $("#model").value = localStorage.getItem("df_model") || "gemini-2.5-flash-image";
 $("#model").onchange = () => localStorage.setItem("df_model", $("#model").value);
+
+function seg(id, hintId, hints){
+  const box = $(id);
+  const val = () => box.querySelector("button.on").dataset.v;
+  box.onclick = e => {
+    const b = e.target.closest("button"); if(!b) return;
+    box.querySelectorAll("button").forEach(x => x.classList.toggle("on", x===b));
+    $(hintId).textContent = hints[val()];
+  };
+  $(hintId).textContent = hints[val()];
+  return val;
+}
+const sizeChoice = seg("#segSize", "#hintSize", SIZE_HINT);
+const sevChoice  = seg("#segSev",  "#hintSev",  SEV_HINT);
 
 async function cropCanvas(ex, pad=0.35){
   const bmp = await createImageBitmap(ex.file);
@@ -360,7 +529,7 @@ async function cropCanvas(ex, pad=0.35){
 }
 
 /* ---------- gemini ---------- */
-async function edit(baseCanvas, cropCanvasEl, cat, region, size, hint){
+async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint){
   const [b1,b2] = await Promise.all([toBlob(baseCanvas), toBlob(cropCanvasEl)]);
   const [d1,d2] = await Promise.all([toB64(b1), toB64(b2)]);
   const model = $("#model").value;
@@ -368,7 +537,7 @@ async function edit(baseCanvas, cropCanvasEl, cat, region, size, hint){
     method:"POST",
     headers:{"Content-Type":"application/json","x-goog-api-key":$("#key").value.trim()},
     body: JSON.stringify({contents:[{parts:[
-      {text: PROMPT(cat, region, size, hint)},
+      {text: PROMPT(cat, region, size, sev, hint)},
       {inlineData:{mimeType:"image/jpeg", data:d1}},
       {inlineData:{mimeType:"image/jpeg", data:d2}}]}]})
   });
@@ -383,40 +552,47 @@ async function edit(baseCanvas, cropCanvasEl, cat, region, size, hint){
 }
 
 /* ---------- generation ---------- */
-async function generateOne(split, idx, weights, hint){
+async function generateOne(split, idx, weights, hint, tag){
   const rnd = mulberry32((+$("#seed").value||1)*7919 + idx*104729 + (split==="valid"?13:0));
   const bmp = await createImageBitmap(pick(rnd, state.goods));
   let cur = canvasOf(bmp); bmp.close();
+  const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
   const retries = +$("#retries").value||0;
   for(let d=0; d<k && !abort; d++){
     const ex = pick(rnd, weights);
     const crop = await cropCanvas(ex);
-    const region = pick(rnd, CELLS), size = randint(rnd, 4, 18);
+    const [lo,hi] = SIZES[sizeChoice()];
+    const region = pick(rnd, CELLS), size = randint(rnd, lo, hi);
+    const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(cur, crop, ex.name, region, size, hint); }
+      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint); }
       catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
       let oc = canvasOf(out); out.close();
       if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
-      const box = diffBBox(cur, oc);
-      if(plausible(box, cur.width, cur.height)){ boxes.push({cat:ex.cat, name:ex.name, box}); cur = oc; break; }
+      const m = diffBBox(cur, oc);
+      if(m && plausible(m.box, cur.width, cur.height)){
+        boxes.push({cat:ex.cat, name:ex.name, box:m.box, sev:sevKey, strength:m.strength,
+                    pct:+(m.box[2]/cur.width*100).toFixed(1)});
+        cur = oc; break;
+      }
       log(`  · ${split} ${idx}: no usable change, retrying`);
     }
   }
   if(!boxes.length) return null;
-  return {split, name:`synth_${split}_${String(idx).padStart(5,"0")}.jpg`,
-          blob: await toBlob(cur), w:cur.width, h:cur.height, boxes,
+  return {split, tag, name:`synth_${split}_${String(state.seq++).padStart(5,"0")}.jpg`,
+          blob: await toBlob(cur), baseBlob, w:cur.width, h:cur.height, boxes,
           thumb: previewURL(cur, boxes)};
 }
 function previewURL(canvas, boxes){
   const s = Math.min(1, 420/canvas.width);
   const c = resizeTo(canvas, Math.round(canvas.width*s), Math.round(canvas.height*s));
   const x = c.getContext("2d");
-  x.strokeStyle = "#ff2d2d"; x.lineWidth = Math.max(2, 3*s); x.font = "12px sans-serif";
-  x.fillStyle = "#ff2d2d";
+  x.lineWidth = Math.max(2, 3*s); x.font = "600 12px sans-serif";
   for(const b of boxes){
+    x.strokeStyle = x.fillStyle = colorForLabel(b.name);
     x.strokeRect(b.box[0]*s, b.box[1]*s, b.box[2]*s, b.box[3]*s);
     x.fillText(b.name, b.box[0]*s+3, Math.max(11, b.box[1]*s-3));
   }
@@ -424,33 +600,36 @@ function previewURL(canvas, boxes){
 }
 function addCard(r){
   const el = document.createElement("div");
-  el.className = "card";
-  el.innerHTML = `<img src="${r.thumb}"><div class="meta"><span>${r.split}</span>
-    <span>${r.boxes.map(b=>b.name).join(", ")}</span></div>
-    <button class="x">drop</button>`;
-  el.querySelector(".x").onclick = () => {
-    state.results = state.results.filter(x => x !== r); el.remove(); counter();
-  };
+  el.className = "card"; r.el = el;
+  const m = r.boxes.map(b => `${b.pct}% · ${b.sev} · contrast ${b.strength}`).join("  |  ");
+  el.innerHTML = `<img src="${r.thumb}">
+    ${r.tag ? `<span class="tagline">${r.tag}</span>` : ""}
+    <div class="meta"><span>${r.split}</span><b>${r.boxes.map(b=>b.name).join(", ")}</b>
+    <span class="m">${m}</span></div><button class="x">drop</button>`;
+  el.querySelector(".x").onclick = e => { e.stopPropagation(); drop(r); };
+  el.querySelector("img").onclick = () => openLight(r);
   $("#cards").prepend(el);
+}
+function drop(r){
+  state.results = state.results.filter(x => x !== r);
+  r.el?.remove(); counter();
+  if($("#light").classList.contains("on")) closeLight();
 }
 const counter = () => $("#counter").textContent =
   `${state.results.length} kept · ${state.results.reduce((n,r)=>n+r.boxes.length,0)} annotations`;
 
-async function run(){
+async function run(jobs, tag){
   running = true; abort = false;
-  $("#go").disabled = $("#zip").disabled = true; $("#stop").disabled = false;
+  $("#go").disabled = $("#try").disabled = $("#zip").disabled = true; $("#stop").disabled = false;
   const picked = new Set(chosen());
   const weights = state.exemplars.filter(e => picked.has(e.name));   // natural mix within selection
   const hint = $("#hint").value;
-  const jobs = [];
-  for(let i=0;i<(+$("#ntrain").value||0);i++) jobs.push(["train",i]);
-  for(let i=0;i<(+$("#nvalid").value||0);i++) jobs.push(["valid",i]);
   let done = 0;
   const worker = async () => {
     while(jobs.length && !abort){
       const [split,i] = jobs.shift();
       try{
-        const r = await generateOne(split, i, weights, hint);
+        const r = await generateOne(split, i, weights, hint, tag);
         if(r){ state.results.push(r); addCard(r); }
         else log(`  × ${split} ${i}: no usable defect, skipped`);
       }catch(e){ log(`  ! ${split} ${i}: ${e.message}`); }
@@ -460,10 +639,13 @@ async function run(){
   };
   await Promise.all(Array.from({length:+$("#conc").value||4}, worker));
   running = false; $("#stop").disabled = true; $("#zip").disabled = !state.results.length;
-  log(abort ? "stopped" : "done");
+  log(abort ? "stopped" : (tag ? "preview done — check the images, adjust, then run the batch" : "done"));
   ready();
 }
-$("#go").onclick = run;
+const jobList = (n, split) => Array.from({length:n}, () => [split, state.job++]);
+$("#go").onclick = () => run([...jobList(+$("#ntrain").value||0, "train"),
+                              ...jobList(+$("#nvalid").value||0, "valid")], "");
+$("#try").onclick = () => run(jobList(3, "train"), "preview");
 $("#stop").onclick = () => { abort = true; log("stopping after in-flight requests…"); };
 
 /* ---------- export ---------- */
@@ -485,7 +667,8 @@ $("#zip").onclick = async () => {
       for(const b of r.boxes){
         const [x,y,w,h] = b.box;
         anns.push({id:aid++, image_id:i+1, category_id:b.cat, bbox:[x,y,w,h], area:w*h, iscrowd:0,
-                   segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]]});
+                   segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]],
+                   attributes:{severity:b.sev, width_pct:b.pct, contrast:b.strength}});
       }
       z.file(`${split}/${r.name}`, r.blob);
     });
@@ -530,19 +713,175 @@ window.selfTest = function(){
   x.putImageData(im,0,0);
   const after = canvasOf(c), ax = after.getContext("2d");
   ax.fillStyle="#141414"; ax.beginPath(); ax.ellipse(130,85,30,25,0,0,7); ax.fill();
-  const box = diffBBox(c, after);
+  const m = diffBBox(c, after); const box = m && m.box;
   const near = (a,b,t)=>Math.abs(a-b)<=t;
   const okBox = box && near(box[0],100,8) && near(box[1],60,8) && near(box[2],61,12) && near(box[3],51,12);
   const okSame = diffBBox(c, canvasOf(c)) === null;
+  const okStrength = m && m.strength > 5;
   const shift = canvasOf(c), sx = shift.getContext("2d");
   sx.globalAlpha=0.25; sx.fillStyle="#fff"; sx.fillRect(0,0,320,240);
-  const okGlobal = !plausible(diffBBox(c, shift), 320, 240);
+  const g = diffBBox(c, shift);
+  const okGlobal = !g || !plausible(g.box, 320, 240);
   const msg = `bbox ${JSON.stringify(box)} ${okBox?"ok":"FAIL"} · unchanged ${okSame?"ok":"FAIL"}`
-            + ` · global restyle rejected ${okGlobal?"ok":"FAIL"}`;
+            + ` · global restyle rejected ${okGlobal?"ok":"FAIL"} · strength ${m&&m.strength}`
+            + ` ${okStrength?"ok":"FAIL"}`;
   log(msg);
-  return okBox && okSame && okGlobal ? "PASS " + msg : "FAIL " + msg;
+  return okBox && okSame && okGlobal && okStrength ? "PASS " + msg : "FAIL " + msg;
 };
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
+/* ---------- lightbox: inspect one result full-size ---------- */
+let lightR = null, lightURLs = [];
+const light = $("#light");
+function openLight(r){
+  lightR = r;
+  lightURLs.forEach(URL.revokeObjectURL); lightURLs = [];
+  const edit = URL.createObjectURL(r.blob), base = URL.createObjectURL(r.baseBlob);
+  lightURLs = [edit, base];
+  const img = $("#lImg");
+  img.src = edit; img.dataset.edit = edit; img.dataset.base = base;
+  $("#lWho").textContent = r.boxes.map(b=>b.name).join(", ");
+  $("#lMeta").textContent = `${r.split} · ${r.w}×${r.h} · ` +
+    r.boxes.map(b => `${b.pct}% wide · ${b.sev} · contrast ${b.strength}`).join(" | ");
+  img.onload = () => {
+    const bx = $("#lBoxes"); bx.innerHTML = "";
+    const sx = img.clientWidth / r.w, sy = img.clientHeight / r.h;
+    for(const b of r.boxes){
+      const d = document.createElement("div"); d.className = "bx";
+      d.style.cssText = `left:${b.box[0]*sx}px;top:${b.box[1]*sy}px;width:${b.box[2]*sx}px;`+
+        `height:${b.box[3]*sy}px;border-color:${colorForLabel(b.name)}`;
+      d.innerHTML = `<span style="color:${colorForLabel(b.name)}">${b.name} · ${b.sev}</span>`;
+      bx.appendChild(d);
+    }
+  };
+  light.classList.add("on");
+}
+function closeLight(){ light.classList.remove("on");
+  lightURLs.forEach(URL.revokeObjectURL); lightURLs = []; lightR = null; }
+function lightStep(d){
+  if(!lightR) return;
+  const i = state.results.indexOf(lightR), n = state.results.length;
+  if(n) openLight(state.results[(i + d + n) % n]);
+}
+const showBase = on => { const img = $("#lImg");
+  img.src = on ? img.dataset.base : img.dataset.edit;
+  light.classList.toggle("compare", on); };
+$("#lClose").onclick = closeLight;
+$("#lPrev").onclick = () => lightStep(-1);
+$("#lNext").onclick = () => lightStep(1);
+$("#lDrop").onclick = () => { const r = lightR; lightStep(1); drop(r);
+  if(!state.results.length) closeLight(); };
+$("#lImg").onpointerdown = () => showBase(true);
+addEventListener("pointerup", () => light.classList.contains("on") && showBase(false));
+addEventListener("keydown", e => {
+  if(!light.classList.contains("on")) return;
+  if(e.key === "Escape") closeLight();
+  if(e.key === "ArrowRight") lightStep(1);
+  if(e.key === "ArrowLeft") lightStep(-1);
+  if(e.key === "x") $("#lDrop").click();
+  if(e.key === " "){ e.preventDefault(); showBase(true); } });
+addEventListener("keyup", e => { if(e.key === " " && light.classList.contains("on")) showBase(false); });
+
+/* ---------- guided tour ---------- */
+const TOUR = [
+ {t:"Welcome to DefectForge",
+  b:"Two folders in, one Roboflow-ready dataset out. This takes about a minute to walk through — "+
+    "it is worth it, because two of the steps decide whether your labels are any good."},
+ {sel:"#key", t:"Your Gemini key",
+  b:"Paste a key from Google AI Studio. It goes from this tab straight to Google and nowhere else — "+
+    "there is no server behind this page. Leave <b>remember</b> unticked on a shared machine and the "+
+    "key dies with the tab."},
+ {sel:"#dropAnn", t:"The defects it learns from",
+  b:"Pick the folder holding your <b>annotated</b> defect images plus their COCO json — a Roboflow "+
+    "export works as-is. These stay real and become the <b>test</b> split, so you always evaluate "+
+    "against genuine defects, never against generated ones."},
+ {sel:"#dropGood", t:"The good items",
+  b:"Pick a folder of <b>defect-free</b> photos, no annotations needed. Each one is a base that "+
+    "Gemini paints a new defect onto. More variety here — angles, lighting, batches — means a "+
+    "harder, better training set."},
+ {sel:"#classBox", t:"Choose the defect types",
+  b:"After loading, every class shows up here with the number of real examples it can imitate. "+
+    "Untick one to leave it out. A class with only two or three examples will produce repetitive "+
+    "defects — feed it more real ones first."},
+ {sel:"#segSize", t:"Small or big defects",
+  b:"Pick how much of the frame a defect covers, and how pronounced it looks. <b>Mixed</b> draws "+
+    "a fresh size and severity per defect — closest to real production. <b>Hairline + faint</b> is "+
+    "the hard regime detectors actually get paid for."},
+ {sel:"#try", t:"Preview before you spend",
+  b:"<b>Preview 3</b> generates three images with your current settings — a few calls, not "+
+    "hundreds. Click one to inspect it full size and hold space to flip against the original. "+
+    "Adjust, preview again, and only then run the batch."},
+ {sel:"#estimate", t:"Size it",
+  b:"Each defect is one Gemini image call, so 200 images at 2 defects each is roughly 400 calls. "+
+    "Start with 20 and look at the results before spending on a full run."},
+ {sel:"#go", t:"Generate, then judge",
+  b:"Images stream in as they finish. Every box you see was <b>measured</b> by diffing the result "+
+    "against the base — the model is never asked where it put the defect, because it is not "+
+    "reliable at saying. Edits that changed nothing, or restyled the whole frame, are thrown away."},
+ {sel:"#cards", t:"Drop the bad ones",
+  b:"This is the part nobody should skip. Look at each card: does the box actually sit on a "+
+    "convincing defect? Hit <b>drop</b> on anything wrong. Dropped images never reach the zip, and "+
+    "a small clean set beats a big dirty one every time."},
+ {sel:"#zip", t:"Ship it to Roboflow",
+  b:"The zip contains <b>train/</b>, <b>valid/</b> and <b>test/</b>, each with its own "+
+    "_annotations.coco.json. Drag it into Roboflow and the splits are preserved."},
+];
+let step = 0, mandatory = false;
+const mask = document.createElement("div"); mask.id = "mask";
+mask.innerHTML = `<div id="spot"></div>
+  <div id="pop"><h3></h3><p></p><div class="nav"><span class="count"></span>
+  <button id="tBack">Back</button><button id="tSkip">Skip</button>
+  <button id="tNext" class="primary">Next</button></div></div>`;
+document.body.appendChild(mask);
+const spot = mask.querySelector("#spot"), pop = mask.querySelector("#pop");
+
+function place(){
+  const s = TOUR[step], el = s.sel && document.querySelector(s.sel);
+  const vis = el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
+  if(!vis){
+    spot.classList.add("hidden");
+    pop.style.top = "50%"; pop.style.left = "50%"; pop.style.transform = "translate(-50%,-50%)";
+    return;
+  }
+  spot.classList.remove("hidden");
+  const r = el.getBoundingClientRect(), pad = 8;
+  spot.style.top = (r.top + scrollY - pad) + "px"; spot.style.left = (r.left + scrollX - pad) + "px";
+  spot.style.width = (r.width + pad*2) + "px"; spot.style.height = (r.height + pad*2) + "px";
+  pop.style.transform = "none";
+  const ph = pop.offsetHeight || 190, below = r.bottom + 14;
+  pop.style.top = (below + ph < innerHeight ? below : Math.max(14, r.top - ph - 14)) + "px";
+  pop.style.left = Math.min(Math.max(14, r.left), innerWidth - pop.offsetWidth - 14) + "px";
+}
+function show(i){
+  step = Math.max(0, Math.min(TOUR.length-1, i));
+  const s = TOUR[step];
+  pop.querySelector("h3").textContent = s.t;
+  pop.querySelector("p").innerHTML = s.b;
+  pop.querySelector(".count").textContent = `${step+1} / ${TOUR.length}`;
+  mask.querySelector("#tBack").style.display = step ? "" : "none";
+  mask.querySelector("#tSkip").style.display = mandatory ? "none" : "";
+  mask.querySelector("#tNext").textContent = step === TOUR.length-1 ? "Finish" : "Next";
+  const el = s.sel && document.querySelector(s.sel);
+  if(el && el.offsetParent !== null){ el.scrollIntoView({block:"center", behavior:"smooth"});
+    setTimeout(place, 340); }
+  place();
+}
+function openTour(force){
+  mandatory = !force;                      // first visit: no way out but through
+  mask.classList.add("on"); show(0);
+}
+function endTour(){ mask.classList.remove("on"); localStorage.setItem("df_tour", "1"); }
+mask.querySelector("#tNext").onclick = () => step === TOUR.length-1 ? endTour() : show(step+1);
+mask.querySelector("#tBack").onclick = () => show(step-1);
+mask.querySelector("#tSkip").onclick = endTour;
+addEventListener("resize", () => mask.classList.contains("on") && place());
+addEventListener("scroll", () => mask.classList.contains("on") && place(), {passive:true});
+addEventListener("keydown", e => { if(!mask.classList.contains("on")) return;
+  if(e.key === "Escape" && !mandatory) endTour();
+  if(e.key === "ArrowRight") mask.querySelector("#tNext").click();
+  if(e.key === "ArrowLeft" && step) show(step-1); });
+$("#guide").onclick = () => openTour(true);
+if(!localStorage.getItem("df_tour")) setTimeout(() => openTour(false), 400);
+
 ready();
 </script>
 </body>

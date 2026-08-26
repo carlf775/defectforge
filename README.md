@@ -31,12 +31,17 @@ Categories are unified across every split, so the synthetic classes line up with
 
 ### Browser (this repo's GitHub Page)
 
-No install. Paste a Gemini API key, choose the two folders, tick the defect classes, generate,
-drop anything that looks wrong, download the zip.
+No install. A mandatory guided tour covers the workflow on first visit (re-run it any time with
+the **Guided tour** button). Paste a Gemini API key, choose the two folders, tick the defect
+classes, pick defect **size** (hairline → large) and **severity** (faint → severe), then
+**Preview 3** — a handful of calls — before paying for a full batch. Click any result to inspect
+it full size and hold space to flip against the original; drop anything unconvincing. Each
+annotation also carries `attributes: {severity, width_pct, contrast}` in the COCO json.
 
-> The key is sent from your browser directly to Google and cached in `localStorage`. Anyone
-> using that browser profile can read it. Restrict the key to your Pages domain in Google AI
-> Studio and never commit it.
+> The key is sent from your browser directly to Google and nowhere else (the page's CSP only
+> allows connections to `generativelanguage.googleapis.com`). It is kept in memory unless you
+> tick *remember on this device*, which stores it in `localStorage`. Restrict the key to your
+> Pages domain in Google AI Studio and never commit it.
 
 ### CLI, for large batches
 
@@ -68,3 +73,6 @@ Settings → Pages → Source: *Deploy from a branch* → `main` / `/ (root)`. T
   instance segmentation.
 - The base image is re-encoded by the model, so a defect that blends *too* well can fall under
   the change threshold and get skipped. Skips are logged, never silently labelled.
+
+The CLI is the plain engine — it does not yet have the size/severity presets or preview flow;
+use `--hint` for the same effect in prose.
