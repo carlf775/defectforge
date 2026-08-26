@@ -155,10 +155,8 @@ header .tag{margin-left:14px}
 #light .frame{position:relative;display:inline-block;max-width:100%;max-height:100%}
 #light .frame img{display:block;max-width:100%;max-height:calc(100vh - 150px);
   border:1px solid var(--line);border-radius:var(--radius)}
-#light .bx{position:absolute;border:2px solid;border-radius:2px;pointer-events:none}
-#light .bx span{position:absolute;top:-19px;left:-2px;font:600 11px var(--body);white-space:nowrap;
-  text-shadow:0 1px 3px rgba(0,0,0,.9)}
-#light.compare .bx{display:none}
+#light.compare #lOv{display:none}
+#lOv text{font:600 12px var(--body);paint-order:stroke;stroke:rgba(0,0,0,.75);stroke-width:3px}
 #light .hint{text-align:center;font-size:12px;color:var(--muted);margin-top:12px}
 </style>
 </head>
@@ -288,7 +286,9 @@ model says. Out comes a zip Roboflow imports with the splits intact. Runs entire
       <button id="lClose">close</button>
     </span>
   </div>
-  <div class="stage"><div class="frame"><img id="lImg"><div id="lBoxes"></div></div></div>
+  <div class="stage"><div class="frame"><img id="lImg">
+    <svg id="lOv" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
+  </div></div>
   <div class="hint">hold <b>space</b> or press-and-hold the image to see the original ·
     ←/→ next · <b>x</b> drop · esc close</div>
 </div>
@@ -374,6 +374,28 @@ function morph(mask,w,h,keep){            // keep=9 erode(3x3), keep=1 dilate(3x
   }
   return out;
 }
+function tracePoly(comp, w, h){          // Moore boundary trace of one connected component
+  let s0 = -1;
+  for(let i=0;i<w*h;i++) if(comp[i]){ s0 = i; break; }
+  if(s0 < 0) return [];
+  const sx = s0%w, sy = (s0-sx)/w;
+  const D = [[1,0],[1,1],[0,1],[-1,1],[-1,0],[-1,-1],[0,-1],[1,-1]];
+  const at = (x,y) => x>=0 && y>=0 && x<w && y<h && comp[y*w+x];
+  const pts = [[sx,sy]];
+  let cx = sx, cy = sy, dir = 6;            // start pixel is topmost-left, so nothing above it
+  for(let g=0; g<40000; g++){
+    let moved = false;
+    for(let i=0;i<8;i++){
+      const dd = (dir+i)%8, nx = cx+D[dd][0], ny = cy+D[dd][1];
+      if(at(nx,ny)){ cx=nx; cy=ny; pts.push([cx,cy]); dir=(dd+6)%8; moved=true; break; }
+    }
+    if(!moved || (cx===sx && cy===sy)) break;
+  }
+  const step = Math.max(1, Math.floor(pts.length/60));   // ~60 vertices is plenty
+  const out = pts.filter((_,i) => i%step===0);
+  return out.length >= 3 ? out : pts;
+}
+
 function diffBBox(before, after){
   if(before.width!==after.width || before.height!==after.height) return null;
   const s = Math.min(1, 512/Math.max(before.width,before.height));
@@ -393,7 +415,7 @@ function diffBBox(before, after){
   m = morph(morph(m,w,h,9),w,h,1);                // opening: kill speckle + recompression noise
   // largest connected component
   const seen = new Uint8Array(n), stack = new Int32Array(n);
-  let best = null, bestSize = 0;
+  let best = null, bestSize = 0, bestStart = -1;
   for(let i=0;i<n;i++){
     if(!m[i] || seen[i]) continue;
     let sp=0, size=0; stack[sp++]=i; seen[i]=1;
@@ -408,15 +430,32 @@ function diffBBox(before, after){
         if(m[q] && !seen[q]){ seen[q]=1; stack[sp++]=q; }
       }
     }
-    if(size>bestSize){ bestSize=size; best=[x0,y0,x1-x0+1,y1-y0+1]; }
+    if(size>bestSize){ bestSize=size; best=[x0,y0,x1-x0+1,y1-y0+1]; bestStart=i; }
   }
   if(!best) return null;
   let sum = 0, cnt = 0;                       // how hard those pixels actually changed
   for(let y=best[1]; y<best[1]+best[3]; y++)
     for(let x=best[0]; x<best[0]+best[2]; x++){ sum += d[y*w+x]; cnt++; }
+  // re-flood just the winning component, then trace its outline
+  const comp = new Uint8Array(n); seen.fill(0);
+  {
+    let sp=0; stack[sp++]=bestStart; seen[bestStart]=1;
+    while(sp){
+      const p=stack[--sp]; comp[p]=1;
+      const px=p%w, py=(p-px)/w;
+      for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
+        const xx=px+dx, yy=py+dy;
+        if(xx<0||yy<0||xx>=w||yy>=h) continue;
+        const q=yy*w+xx;
+        if(m[q] && !seen[q]){ seen[q]=1; stack[sp++]=q; }
+      }
+    }
+  }
   const k = 1/s;
+  const poly = tracePoly(comp, w, h).map(([x,y]) => [Math.round(x*k), Math.round(y*k)]);
   return {box:[Math.round(best[0]*k), Math.round(best[1]*k),
                Math.round(best[2]*k), Math.round(best[3]*k)],
+          poly, maskArea: Math.round(bestSize*k*k),
           strength: Math.round(sum/Math.max(1,cnt)/255*100)};
 }
 const plausible = (box,w,h) => {
@@ -593,7 +632,8 @@ async function generateOne(split, idx, weights, hint, tag){
       if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
       const m = diffBBox(cur, oc);
       if(m && plausible(m.box, cur.width, cur.height)){
-        boxes.push({cat:ex.cat, name:ex.name, box:m.box, sev:sevKey, strength:m.strength,
+        boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
+                    sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
         cur = oc; break;
       }
@@ -611,8 +651,16 @@ function previewURL(canvas, boxes){
   const x = c.getContext("2d");
   x.lineWidth = Math.max(2, 3*s); x.font = "600 12px sans-serif";
   for(const b of boxes){
-    x.strokeStyle = x.fillStyle = colorForLabel(b.name);
-    x.strokeRect(b.box[0]*s, b.box[1]*s, b.box[2]*s, b.box[3]*s);
+    const col = colorForLabel(b.name);
+    x.strokeStyle = x.fillStyle = col;
+    if(b.poly && b.poly.length >= 3){
+      x.beginPath();
+      b.poly.forEach(([px,py],i) => i ? x.lineTo(px*s,py*s) : x.moveTo(px*s,py*s));
+      x.closePath();
+      x.globalAlpha = .22; x.fill(); x.globalAlpha = 1; x.stroke();
+    }else{
+      x.strokeRect(b.box[0]*s, b.box[1]*s, b.box[2]*s, b.box[3]*s);
+    }
     x.fillText(b.name, b.box[0]*s+3, Math.max(11, b.box[1]*s-3));
   }
   return c.toDataURL("image/jpeg", 0.75);
@@ -685,8 +733,10 @@ $("#zip").onclick = async () => {
       images.push({id:i+1, file_name:r.name, width:r.w, height:r.h, license:0, date_captured:""});
       for(const b of r.boxes){
         const [x,y,w,h] = b.box;
-        anns.push({id:aid++, image_id:i+1, category_id:b.cat, bbox:[x,y,w,h], area:w*h, iscrowd:0,
-                   segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]],
+        const seg = (b.poly && b.poly.length >= 3) ? [b.poly.flat()]
+                  : [[x,y, x+w,y, x+w,y+h, x,y+h]];
+        anns.push({id:aid++, image_id:i+1, category_id:b.cat, bbox:[x,y,w,h],
+                   area:b.maskArea || w*h, iscrowd:0, segmentation:seg,
                    attributes:{severity:b.sev, width_pct:b.pct, contrast:b.strength}});
       }
       z.file(`${split}/${r.name}`, r.blob);
@@ -737,15 +787,20 @@ window.selfTest = function(){
   const okBox = box && near(box[0],100,8) && near(box[1],60,8) && near(box[2],61,12) && near(box[3],51,12);
   const okSame = diffBBox(c, canvasOf(c)) === null;
   const okStrength = m && m.strength > 5;
+  const okPoly = m && m.poly.length >= 6 && m.poly.every(([px,py]) =>
+    px >= box[0]-4 && px <= box[0]+box[2]+4 && py >= box[1]-4 && py <= box[1]+box[3]+4);
+  const okArea = m && m.maskArea > 0.5*Math.PI*30*25 && m.maskArea < 1.6*Math.PI*30*25;
   const shift = canvasOf(c), sx = shift.getContext("2d");
   sx.globalAlpha=0.25; sx.fillStyle="#fff"; sx.fillRect(0,0,320,240);
   const g = diffBBox(c, shift);
   const okGlobal = !g || !plausible(g.box, 320, 240);
   const msg = `bbox ${JSON.stringify(box)} ${okBox?"ok":"FAIL"} · unchanged ${okSame?"ok":"FAIL"}`
             + ` · global restyle rejected ${okGlobal?"ok":"FAIL"} · strength ${m&&m.strength}`
-            + ` ${okStrength?"ok":"FAIL"}`;
+            + ` ${okStrength?"ok":"FAIL"} · poly ${m&&m.poly.length}pts ${okPoly?"ok":"FAIL"}`
+            + ` · mask area ${m&&m.maskArea} ${okArea?"ok":"FAIL"}`;
   log(msg);
-  return okBox && okSame && okGlobal && okStrength ? "PASS " + msg : "FAIL " + msg;
+  return okBox && okSame && okGlobal && okStrength && okPoly && okArea
+    ? "PASS " + msg : "FAIL " + msg;
 };
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 /* ---------- lightbox: inspect one result full-size ---------- */
@@ -762,15 +817,18 @@ function openLight(r){
   $("#lMeta").textContent = `${r.split} · ${r.w}×${r.h} · ` +
     r.boxes.map(b => `${b.pct}% wide · ${b.sev} · contrast ${b.strength}`).join(" | ");
   img.onload = () => {
-    const bx = $("#lBoxes"); bx.innerHTML = "";
-    const sx = img.clientWidth / r.w, sy = img.clientHeight / r.h;
-    for(const b of r.boxes){
-      const d = document.createElement("div"); d.className = "bx";
-      d.style.cssText = `left:${b.box[0]*sx}px;top:${b.box[1]*sy}px;width:${b.box[2]*sx}px;`+
-        `height:${b.box[3]*sy}px;border-color:${colorForLabel(b.name)}`;
-      d.innerHTML = `<span style="color:${colorForLabel(b.name)}">${b.name} · ${b.sev}</span>`;
-      bx.appendChild(d);
-    }
+    const ov = $("#lOv");
+    ov.setAttribute("viewBox", `0 0 ${r.w} ${r.h}`);
+    ov.innerHTML = r.boxes.map(b => {
+      const col = colorForLabel(b.name);
+      const shape = (b.poly && b.poly.length >= 3)
+        ? `<polygon points="${b.poly.map(p=>p.join(",")).join(" ")}" fill="${col}"
+             fill-opacity=".2" stroke="${col}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`
+        : `<rect x="${b.box[0]}" y="${b.box[1]}" width="${b.box[2]}" height="${b.box[3]}"
+             fill="none" stroke="${col}" stroke-width="2.5" vector-effect="non-scaling-stroke"/>`;
+      return shape + `<text x="${b.box[0]+4}" y="${Math.max(14,b.box[1]-6)}" fill="${col}">`+
+        `${b.name} · ${b.sev}</text>`;
+    }).join("");
   };
   light.classList.add("on");
 }

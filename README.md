@@ -17,10 +17,13 @@ your good items         ──►  train / valid (Gemini paints defects onto the
    as a visual exemplar of what that defect looks like.
 3. It sends base + exemplar to Gemini image editing ("Nano Banana") with an edit-only prompt:
    add one defect of this kind here, change nothing else.
-4. **The bounding box is measured, not guessed.** The result is diffed against the base
+4. **The annotation is measured, not guessed.** The result is diffed against the base
    (greyscale difference → morphological opening → largest connected component). Gemini is never
    asked for coordinates, because it is not reliable at reporting them. Edits that changed nothing,
-   or that restyled the whole frame, are rejected and retried.
+   or that restyled the whole frame, are rejected and retried. The kept region yields both the
+   bounding box and a real segmentation polygon (Moore boundary trace of the changed pixels), and
+   `area` is the actual mask pixel count — so the dataset works for instance segmentation, not
+   just detection.
 5. Multiple defects per image stack: each pass edits the previous result.
 6. Output is a zip with `train/`, `valid/`, `test/`, each holding its images and an
    `_annotations.coco.json` — Roboflow's own export layout, so importing preserves the splits.
@@ -69,8 +72,6 @@ Settings → Pages → Source: *Deploy from a branch* → `main` / `/ (root)`. T
 
 - One Gemini image call per defect. 200 images at ~1.5 defects each ≈ 300 calls.
 - Browser build holds every generated image in memory; past ~300 images use the CLI.
-- `segmentation` is the bounding rectangle, not a real mask — fine for detection, not for
-  instance segmentation.
 - The base image is re-encoded by the model, so a defect that blends *too* well can fall under
   the change threshold and get skipped. Skips are logged, never silently labelled.
 

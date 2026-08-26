@@ -46,8 +46,35 @@ Do not restyle, do not clean up, do not add text, labels, arrows or watermarks."
 
 # ---------- measurement ----------
 
+def trace_poly(comp):
+    """Moore boundary trace of a binary component -> [(x, y), ...], ~60 vertices."""
+    ys, xs = np.nonzero(comp)
+    if not len(ys):
+        return []
+    sy, sx = int(ys[0]), int(xs[ys == ys[0]].min())
+    D = [(1, 0), (1, 1), (0, 1), (-1, 1), (-1, 0), (-1, -1), (0, -1), (1, -1)]
+    h, w = comp.shape
+    at = lambda x, y: 0 <= x < w and 0 <= y < h and comp[y, x]
+    pts, cx, cy, dr = [(sx, sy)], sx, sy, 6      # topmost-left start: nothing above it
+    for _ in range(40000):
+        for i in range(8):
+            dd = (dr + i) % 8
+            nx, ny = cx + D[dd][0], cy + D[dd][1]
+            if at(nx, ny):
+                cx, cy, dr = nx, ny, (dd + 6) % 8
+                pts.append((cx, cy))
+                break
+        else:
+            break                                # isolated pixel
+        if (cx, cy) == (sx, sy):
+            break
+    step = max(1, len(pts) // 60)
+    out = pts[::step]
+    return out if len(out) >= 3 else pts
+
+
 def diff_bbox(before, after):
-    """bbox [x,y,w,h] of the largest changed region, or None."""
+    """Largest changed region -> {box, poly, mask_area, strength}, or None."""
     a = np.asarray(before.convert("L"), np.int16)
     b = np.asarray(after.convert("L"), np.int16)
     if a.shape != b.shape:
@@ -61,8 +88,11 @@ def diff_bbox(before, after):
     if not n:
         return None
     biggest = 1 + int(np.argmax(ndimage.sum(mask, lbl, range(1, n + 1))))
-    ys, xs = ndimage.find_objects(lbl == biggest)[0]
-    return [int(xs.start), int(ys.start), int(xs.stop - xs.start), int(ys.stop - ys.start)]
+    comp = lbl == biggest
+    ys, xs = ndimage.find_objects(comp)[0]
+    box = [int(xs.start), int(ys.start), int(xs.stop - xs.start), int(ys.stop - ys.start)]
+    return {"box": box, "poly": trace_poly(comp), "mask_area": int(comp.sum()),
+            "strength": int(d[comp].mean() / 255 * 100)}
 
 
 def plausible(box, size, lo=5e-5, hi=0.25):
@@ -171,9 +201,9 @@ def make_image(edit, cfg, base_path, by_cat, weights, names, rng):
                 continue
             if out.size != img.size:
                 out = out.resize(img.size, Image.LANCZOS)
-            box = diff_bbox(img, out)
-            if plausible(box, img.size):
-                boxes.append((cat_id, box))
+            m = diff_bbox(img, out)
+            if m and plausible(m["box"], img.size):
+                boxes.append((cat_id, m))
                 img = out                               # stack the next defect on this result
                 break
     return img, boxes
@@ -182,8 +212,12 @@ def make_image(edit, cfg, base_path, by_cat, weights, names, rng):
 def draw_preview(img, boxes, names):
     p = img.copy()
     d = ImageDraw.Draw(p)
-    for cat_id, (x, y, w, h) in boxes:
-        d.rectangle([x, y, x + w, y + h], outline=(255, 0, 0), width=3)
+    for cat_id, m in boxes:
+        x, y, w, h = m["box"]
+        if len(m["poly"]) >= 3:
+            d.polygon(m["poly"], outline=(255, 0, 0), width=3)
+        else:
+            d.rectangle([x, y, x + w, y + h], outline=(255, 0, 0), width=3)
         d.text((x + 4, max(0, y - 12)), names[cat_id], fill=(255, 0, 0))
     return p
 
@@ -220,12 +254,13 @@ def build_split(edit, cfg, split, count, goods, exemplars, weights, coco, names,
         w, h = r["size"]
         images.append({"id": img_id, "file_name": r["file_name"], "width": w, "height": h,
                        "license": 0, "date_captured": ""})
-        for cat_id, (x, y, bw, bh) in r["boxes"]:
+        for cat_id, m in r["boxes"]:
+            x, y, bw, bh = m["box"]
+            seg = ([[c for pt in m["poly"] for c in pt]] if len(m["poly"]) >= 3
+                   else [[x, y, x + bw, y, x + bw, y + bh, x, y + bh]])
             annotations.append({"id": ann_id, "image_id": img_id, "category_id": cat_id,
-                                "bbox": [x, y, bw, bh], "area": bw * bh, "iscrowd": 0,
-                                # ponytail: segmentation is the bbox rectangle; swap in the
-                                # diff mask contour if you need instance segmentation
-                                "segmentation": [[x, y, x + bw, y, x + bw, y + bh, x, y + bh]]})
+                                "bbox": [x, y, bw, bh], "area": m["mask_area"], "iscrowd": 0,
+                                "segmentation": seg})
             ann_id += 1
     (out_dir / "_annotations.coco.json").write_text(json.dumps(
         {"info": {"description": f"synthetic {split}", "version": "1", "year": 2026},
@@ -274,12 +309,19 @@ def selftest():
         ImageFilter.GaussianBlur(2))
     after = base.copy()
     ImageDraw.Draw(after).ellipse((100, 60, 160, 110), fill=(20, 20, 20))
-    box = diff_bbox(base, after)
-    assert box and abs(box[0] - 100) < 6 and abs(box[1] - 60) < 6, box
+    m = diff_bbox(base, after)
+    box = m["box"]
+    assert abs(box[0] - 100) < 6 and abs(box[1] - 60) < 6, box
     assert abs(box[2] - 61) < 8 and abs(box[3] - 51) < 8, box
+    assert len(m["poly"]) >= 6 and all(
+        box[0] - 4 <= px <= box[0] + box[2] + 4 and box[1] - 4 <= py <= box[1] + box[3] + 4
+        for px, py in m["poly"]), "polygon must hug the changed region"
+    import math
+    assert 0.5 * math.pi * 30 * 25 < m["mask_area"] < 1.6 * math.pi * 30 * 25, m["mask_area"]
     assert plausible(box, base.size) and diff_bbox(base, base.copy()) is None
     shift = Image.fromarray(np.clip(np.asarray(base, np.int16) + 40, 0, 255).astype(np.uint8))
-    assert not plausible(diff_bbox(base, shift), base.size), "global restyle must be rejected"
+    g = diff_bbox(base, shift)
+    assert g is None or not plausible(g["box"], base.size), "global restyle must be rejected"
 
     # end-to-end with a stub editor: does the emitted COCO actually match the pixels?
     tmp = Path(tempfile.mkdtemp())
@@ -298,6 +340,8 @@ def selftest():
     assert len(js["images"]) == 3 and len(js["annotations"]) == 3, js
     a = js["annotations"][0]
     assert abs(a["bbox"][0] - 40) < 6 and abs(a["bbox"][1] - 30) < 6, a["bbox"]
+    assert len(a["segmentation"][0]) >= 12, "want a real polygon, not a rectangle"
+    assert a["area"] < a["bbox"][2] * a["bbox"][3], "mask area must be tighter than the bbox"
     im = js["images"][0]
     on_disk = Image.open(tmp / "ds" / "train" / im["file_name"])
     assert (im["width"], im["height"]) == on_disk.size
