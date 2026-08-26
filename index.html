@@ -493,9 +493,31 @@ $("#fAnn").onchange = async e => {
   const files = [...e.target.files];
   const byPath = new Map(files.map(f => [f.webkitRelativePath || f.name, f]));
   const jsons = files.filter(f => f.name.endsWith(".json"));
-  if(!jsons.length){ $("#annInfo").textContent = "no COCO .json found in that folder"; return; }
   state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[]; state.exemplars=[];
   const counts = new Map();
+  if(!jsons.length){
+    // no COCO json: treat as a classification set — one subfolder per class,
+    // every image is a full-frame exemplar of its class
+    for(const f of files){
+      if(!IMG_RE.test(f.name)) continue;
+      const parts = (f.webkitRelativePath || f.name).split("/");
+      const cls = parts.length > 2 ? parts[parts.length-2] : "defect";
+      if(!state.catId.has(cls)){
+        state.catId.set(cls, state.catId.size+1);
+        state.cats.push({id:state.catId.size, name:cls, supercategory:"defect"});
+      }
+      state.exemplars.push({file:f, bbox:null, cat:state.catId.get(cls), name:cls});
+      counts.set(cls,(counts.get(cls)||0)+1);
+    }
+    if(!state.exemplars.length){ $("#annInfo").textContent = "no images found in that folder"; return; }
+    $("#annInfo").textContent =
+      `no COCO json — read as classification folders: ${state.exemplars.length} defect image(s), `+
+      `${state.cats.length} class(es). Whole images become exemplars; no real test split, so the `+
+      `zip will hold train/valid only.`;
+    renderClasses(counts);
+    ready();
+    return;
+  }
   for(const jf of jsons){
     let coco; try{ coco = JSON.parse(await jf.text()); }catch{ continue; }
     if(!coco.annotations || !coco.images) continue;
@@ -591,6 +613,7 @@ const sevChoice  = seg("#segSev",  "#hintSev",  SEV_HINT);
 
 async function cropCanvas(ex, pad=0.35){
   const bmp = await createImageBitmap(ex.file);
+  if(!ex.bbox){ const c = canvasOf(bmp); bmp.close(); return c; }
   const [x,y,w,h] = ex.bbox, px = Math.round(w*pad), py = Math.round(h*pad);
   const x0 = Math.max(0,x-px), y0 = Math.max(0,y-py);
   const x1 = Math.min(bmp.width,x+w+px), y1 = Math.min(bmp.height,y+h+py);
