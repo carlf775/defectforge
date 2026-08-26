@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data: blob:; connect-src https://generativelanguage.googleapis.com; base-uri 'none'; form-action 'none'">
 <title>DefectForge — synthetic defect datasets</title>
-<link rel="icon" href="vendor/deepvis-mark.svg">
+<link rel="icon" href="vendor/icon.svg">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@500;700&family=Fira+Sans:wght@400;500;600&display=swap">
 <script src="vendor/jszip.min.js"></script>
@@ -19,26 +19,35 @@
 }
 *{box-sizing:border-box}
 html{color-scheme:dark}
-body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.6 var(--body);
+body{margin:0;background:#2e3134;color:var(--ink);font:15px/1.6 var(--body);
   -webkit-font-smoothing:antialiased}
+body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:
+    radial-gradient(560px 420px at 12% -6%, rgba(112,193,163,.16), transparent 65%),
+    radial-gradient(680px 520px at 105% 32%, rgba(200,204,208,.10), transparent 60%),
+    radial-gradient(520px 480px at 38% 108%, rgba(112,193,163,.10), transparent 62%),
+    linear-gradient(180deg, #33373a, #2b2e31)}
 .wrap{max-width:1040px;margin:0 auto;padding:40px 22px 90px}
 header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
-header svg{width:30px;height:auto;flex:0 0 auto}
+header svg.mark{width:22px;height:auto;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
 header .tag{margin-left:auto;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
   color:var(--muted)}
 .sub{color:var(--muted);margin:0 0 30px;max-width:64ch;font-size:14.5px}
 .sub b{color:var(--ink);font-weight:600}
-section{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
-  padding:22px;margin-bottom:14px}
+section{background:rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(22px) saturate(1.35);backdrop-filter:blur(22px) saturate(1.35);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.10);border-radius:calc(var(--radius) + 4px);padding:22px;margin-bottom:16px}
+@supports not (backdrop-filter:blur(1px)){section{background:rgba(43,46,49,.92)}}
 h2{font:600 12px/1 var(--display);letter-spacing:.12em;text-transform:uppercase;
   color:var(--muted);margin:0 0 16px;display:flex;align-items:center;gap:9px}
 h2 i{font-style:normal;width:19px;height:19px;border-radius:99px;background:var(--input);
   color:var(--ink);display:grid;place-items:center;font-size:11px;letter-spacing:0}
 label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px}
 input[type=text],input[type=password],input[type=number],select,textarea{
-  width:100%;padding:9px 11px;border:1px solid var(--line);border-radius:var(--radius);
-  background:var(--input);color:var(--ink);font:inherit;font-size:14px;outline:none}
+  width:100%;padding:9px 11px;border:1px solid rgba(255,255,255,.13);border-radius:var(--radius);
+  background:rgba(255,255,255,.06);color:var(--ink);font:inherit;font-size:14px;outline:none}
 input:focus,select:focus,textarea:focus{border-color:var(--accent-deep);
   box-shadow:0 0 0 2px rgba(200,204,208,.14)}
 textarea{resize:vertical;min-height:54px}
@@ -46,20 +55,23 @@ textarea{resize:vertical;min-height:54px}
 .g2{grid-template-columns:1fr 1fr}.g3{grid-template-columns:repeat(3,1fr)}
 .g4{grid-template-columns:repeat(4,1fr)}
 @media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr}}
-button{font:600 14px var(--body);border-radius:var(--radius);border:1px solid var(--line);
-  background:var(--input);color:var(--ink);padding:9px 17px;cursor:pointer;transition:.15s}
+button{font:600 14px var(--body);border-radius:var(--radius);border:1px solid rgba(255,255,255,.14);
+  background:rgba(255,255,255,.07);color:var(--ink);padding:9px 17px;cursor:pointer;transition:.15s;
+  -webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 button:hover:not(:disabled){border-color:var(--accent-deep);background:rgba(255,255,255,.12)}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 button.primary:hover:not(:disabled){background:var(--accent-deep);border-color:var(--accent-deep)}
 button:disabled{opacity:.4;cursor:not-allowed}
-.drop{border:1px dashed rgba(255,255,255,.22);border-radius:var(--radius);padding:20px;
-  text-align:center;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s}
+.drop{border:1px dashed rgba(255,255,255,.24);border-radius:var(--radius);padding:20px;
+  text-align:center;color:var(--muted);cursor:pointer;font-size:13px;transition:.15s;
+  background:rgba(255,255,255,.03)}
 .drop:hover{border-color:var(--accent);color:var(--ink);background:var(--input)}
 .drop b{color:var(--ink);font:600 14px var(--display);display:block;margin-bottom:2px}
 input[type=file]{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
-.chip{display:flex;align-items:center;gap:8px;background:var(--input);border:1px solid var(--line);
-  border-radius:var(--radius);padding:6px 12px;font-size:13px;cursor:pointer;user-select:none}
+.chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:6px 13px;font-size:13px;
+  cursor:pointer;user-select:none;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .chip:hover{border-color:var(--accent-deep)}
 .chip input{margin:0;accent-color:var(--accent)}
 .chip .dot{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
@@ -69,8 +81,10 @@ input[type=file]{display:none}
 .thumbs img{height:70px;border-radius:var(--radius);border:1px solid var(--line);display:block}
 .thumbs figcaption{font-size:10.5px;color:var(--muted);margin-top:4px;letter-spacing:.02em}
 .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(196px,1fr));gap:12px;margin-top:16px}
-.card{border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;
-  background:var(--popover);position:relative}
+.card{background:rgba(255,255,255,.05);
+  -webkit-backdrop-filter:blur(22px) saturate(1.35);backdrop-filter:blur(22px) saturate(1.35);
+  border:1px solid rgba(255,255,255,.12);
+  box-shadow:0 10px 34px rgba(0,0,0,.28), inset 0 1px 0 rgba(255,255,255,.10);border-radius:calc(var(--radius) + 3px);overflow:hidden;position:relative}
 .card img{width:100%;display:block}
 .card .meta{padding:7px 9px;font-size:12px;color:var(--muted);display:flex;
   justify-content:space-between;gap:6px}
@@ -99,12 +113,20 @@ header .tag{margin-left:14px}
 #mask{position:fixed;inset:0;z-index:100;display:none}
 #mask.on{display:block}
 #spot{position:absolute;border-radius:var(--radius);border:1px solid var(--ok);
-  box-shadow:0 0 0 9999px rgba(24,26,28,.78);transition:top .25s,left .25s,width .25s,height .25s;
-  pointer-events:none}
-#spot.hidden{opacity:0;box-shadow:0 0 0 9999px rgba(24,26,28,.78)}
-#pop{position:fixed;z-index:101;width:min(360px,calc(100vw - 32px));background:var(--popover);
-  border:1px solid var(--line);border-radius:var(--radius);padding:18px 19px;
-  box-shadow:0 18px 44px rgba(0,0,0,.5)}
+  box-shadow:0 0 0 9999px rgba(24,26,28,.82), 0 0 22px rgba(112,193,163,.45);
+  transition:top .25s,left .25s,width .25s,height .25s;pointer-events:none}
+#spot.hidden{border-color:transparent;box-shadow:0 0 0 9999px rgba(24,26,28,.82)}
+#pop{position:fixed;z-index:101;width:min(370px,calc(100vw - 32px));
+  background:rgba(63,67,71,.55);
+  -webkit-backdrop-filter:blur(20px) saturate(1.4);backdrop-filter:blur(20px) saturate(1.4);
+  border:1px solid rgba(255,255,255,.16);border-radius:calc(var(--radius) + 4px);
+  padding:19px 20px;box-shadow:0 18px 44px rgba(0,0,0,.45),
+  inset 0 1px 0 rgba(255,255,255,.12)}
+@supports not (backdrop-filter:blur(1px)){#pop{background:var(--popover)}}
+#pop h3::before{content:"";display:inline-block;width:14px;height:9px;margin-right:7px;
+  background:url("vendor/icon.svg") center/contain no-repeat;image-rendering:pixelated}
+#pop .nav button{background:rgba(255,255,255,.08);border-color:rgba(255,255,255,.14)}
+#pop .nav button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 #pop h3{font:700 15px/1.3 var(--display);margin:0 0 7px}
 #pop p{margin:0;font-size:13.5px;line-height:1.6;color:var(--muted)}
 #pop p b{color:var(--ink);font-weight:500}
@@ -121,8 +143,9 @@ header .tag{margin-left:14px}
   letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .card .meta{flex-wrap:wrap;row-gap:2px}
 .card .meta .m{width:100%;font-size:11px;opacity:.85;font-variant-numeric:tabular-nums}
-#light{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.94);display:none;
-  flex-direction:column;padding:18px 20px 20px}
+#light{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.72);
+  -webkit-backdrop-filter:blur(26px) saturate(1.2);backdrop-filter:blur(26px) saturate(1.2);
+  display:none;flex-direction:column;padding:18px 20px 20px}
 #light.on{display:flex}
 #light .top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 #light .top .who{font:600 15px var(--display)}
@@ -142,11 +165,7 @@ header .tag{margin-left:14px}
 <body>
 <div class="wrap">
 <header>
-  <svg viewBox="0 0 1280 667.76" aria-hidden="true"><g fill="#70c1a3">
-  <path d="M1280,337.58c-26.26,38.5-55.93,74.38-88.56,107.46-31.13,31.59-64.98,60.52-101.14,86.4-98.21,70.31-213.53,118.25-338.53,136.31v-135c2.39-.42,4.79-.85,7.16-1.31,110.67-20.75,211.33-69.9,294.1-139.65.02-.04.06-.06.08-.08.12-.1.25-.19.37-.29,20.98-16.91,40.41-35.11,57.91-53.85-.12-.14-.25.13-.37,0-.15-.17-75.42-72.34-118.82-100.92-.29-.19-.6-.39-.89-.58-67.37-44.2-143.58-76.04-225.38-92.31-4.71-.95-9.42-1.83-14.17-2.66V6.69c125.44,18.14,241.15,66.33,339.59,137.09,35.68,25.61,69.11,54.21,99.87,85.4,32.79,33.2,88.85,108.33,88.77,108.41Z"/>
-  <path d="M695.89,2.01v335.22h-111.77V2.01C602.56.68,621.2,0,640,0s37.44.68,55.89,2.01Z"/>
-  <path d="M0,337.58c26.26,38.5,55.93,74.38,88.56,107.46,31.13,31.59,64.98,60.52,101.14,86.4,98.21,70.31,213.53,118.25,338.53,136.31v-135c-2.39-.42-4.79-.85-7.16-1.31-110.67-20.75-211.33-69.9-294.1-139.65-.02-.04-.06-.06-.08-.08-.12-.1-.25-.19-.37-.29-20.98-16.91-40.41-35.11-57.91-53.85.12-.14.25.13.37,0,.15-.17,75.42-72.34,118.82-100.92.29-.19.6-.39.89-.58,67.37-44.2,143.58-76.04,225.38-92.31,4.71-.95,9.42-1.83,14.17-2.66V6.69c-125.44,18.14-241.15,66.33-339.59,137.09-35.68,25.61-69.11,54.21-99.87,85.4C55.98,262.37-.08,337.5,0,337.58Z"/>
-  </g></svg>
+  <svg class="mark" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 14 9" shape-rendering="crispEdges"><rect x="2" y="2" width="10" height="1" fill="#f4fffa"/><rect x="2" y="6" width="10" height="1" fill="#f4fffa"/><rect x="1" y="3" width="12" height="3" fill="#f4fffa"/><rect x="4" y="0" width="1" height="1" fill="#b5f6dc"/><rect x="5" y="0" width="1" height="1" fill="#6fedb6"/><rect x="6" y="0" width="1" height="1" fill="#2fe08f"/><rect x="7" y="0" width="1" height="1" fill="#2fe08f"/><rect x="8" y="0" width="1" height="1" fill="#6fedb6"/><rect x="9" y="0" width="1" height="1" fill="#b5f6dc"/><rect x="2" y="1" width="1" height="1" fill="#6fedb6"/><rect x="3" y="1" width="1" height="1" fill="#2fe08f"/><rect x="10" y="1" width="1" height="1" fill="#2fe08f"/><rect x="11" y="1" width="1" height="1" fill="#6fedb6"/><rect x="1" y="2" width="1" height="1" fill="#2fe08f"/><rect x="12" y="2" width="1" height="1" fill="#2fe08f"/><rect x="0" y="3" width="1" height="1" fill="#6fedb6"/><rect x="13" y="3" width="1" height="1" fill="#6fedb6"/><rect x="0" y="4" width="1" height="1" fill="#2fe08f"/><rect x="13" y="4" width="1" height="1" fill="#2fe08f"/><rect x="0" y="5" width="1" height="1" fill="#6fedb6"/><rect x="13" y="5" width="1" height="1" fill="#6fedb6"/><rect x="1" y="6" width="1" height="1" fill="#2fe08f"/><rect x="12" y="6" width="1" height="1" fill="#2fe08f"/><rect x="2" y="7" width="1" height="1" fill="#6fedb6"/><rect x="3" y="7" width="1" height="1" fill="#2fe08f"/><rect x="10" y="7" width="1" height="1" fill="#2fe08f"/><rect x="11" y="7" width="1" height="1" fill="#6fedb6"/><rect x="4" y="8" width="1" height="1" fill="#b5f6dc"/><rect x="5" y="8" width="1" height="1" fill="#6fedb6"/><rect x="6" y="8" width="1" height="1" fill="#2fe08f"/><rect x="7" y="8" width="1" height="1" fill="#2fe08f"/><rect x="8" y="8" width="1" height="1" fill="#6fedb6"/><rect x="9" y="8" width="1" height="1" fill="#b5f6dc"/><rect x="6" y="2" width="2" height="5" fill="#2fe08f"/><rect x="6" y="3" width="2" height="3" fill="#1db877"/></svg>
   <h1>DefectForge</h1>
   <button id="guide" class="ghost">Guided tour</button>
   <span class="tag">deepvis</span>
@@ -784,46 +803,45 @@ addEventListener("keyup", e => { if(e.key === " " && light.classList.contains("o
 /* ---------- guided tour ---------- */
 const TOUR = [
  {t:"Welcome to DefectForge",
-  b:"Two folders in, one Roboflow-ready dataset out. This takes about a minute to walk through — "+
-    "it is worth it, because two of the steps decide whether your labels are any good."},
+  b:"You give it two folders. It gives you back a full dataset, ready for Roboflow. This tour "+
+    "takes about a minute. Two of its steps decide how good your labels will be, so stick with it."},
  {sel:"#key", t:"Your Gemini key",
-  b:"Paste a key from Google AI Studio. It goes from this tab straight to Google and nowhere else — "+
-    "there is no server behind this page. Leave <b>remember</b> unticked on a shared machine and the "+
-    "key dies with the tab."},
+  b:"Paste a key from Google AI Studio. It goes from this tab straight to Google. Nothing else "+
+    "ever sees it — this page has no server. On a shared computer, leave <b>remember</b> "+
+    "unticked. Then the key is gone when you close the tab."},
  {sel:"#dropAnn", t:"The defects it learns from",
-  b:"Pick the folder holding your <b>annotated</b> defect images plus their COCO json — a Roboflow "+
-    "export works as-is. These stay real and become the <b>test</b> split, so you always evaluate "+
-    "against genuine defects, never against generated ones."},
+  b:"Pick the folder with your labeled defect photos and their COCO file. A Roboflow export "+
+    "works as-is. These photos stay real and become the <b>test</b> split. So you always test "+
+    "on real defects, never on fake ones."},
  {sel:"#dropGood", t:"The good items",
-  b:"Pick a folder of <b>defect-free</b> photos, no annotations needed. Each one is a base that "+
-    "Gemini paints a new defect onto. More variety here — angles, lighting, batches — means a "+
-    "harder, better training set."},
+  b:"Pick a folder of photos with no defects. No labels needed. Each photo becomes a base, and "+
+    "Gemini paints a new defect onto it. More variety here — angles, light, batches — makes a "+
+    "better training set."},
  {sel:"#classBox", t:"Choose the defect types",
-  b:"After loading, every class shows up here with the number of real examples it can imitate. "+
-    "Untick one to leave it out. A class with only two or three examples will produce repetitive "+
-    "defects — feed it more real ones first."},
+  b:"After loading, each defect class shows up here. The number is how many real examples it "+
+    "can copy. Untick a class to leave it out. A class with only two or three examples will "+
+    "look repetitive — give it more real photos first."},
  {sel:"#segSize", t:"Small or big defects",
-  b:"Pick how much of the frame a defect covers, and how pronounced it looks. <b>Mixed</b> draws "+
-    "a fresh size and severity per defect — closest to real production. <b>Hairline + faint</b> is "+
-    "the hard regime detectors actually get paid for."},
+  b:"Pick how big a defect is, and how strong it looks. <b>Mixed</b> picks a new size and "+
+    "strength for each defect — closest to real life. <b>Hairline + faint</b> is the hard "+
+    "stuff: the kind inspectors get paid to catch."},
  {sel:"#try", t:"Preview before you spend",
-  b:"<b>Preview 3</b> generates three images with your current settings — a few calls, not "+
-    "hundreds. Click one to inspect it full size and hold space to flip against the original. "+
-    "Adjust, preview again, and only then run the batch."},
+  b:"<b>Preview 3</b> makes three images with your settings. That costs a few calls, not "+
+    "hundreds. Look at them. Adjust. Preview again. Only then run the big batch."},
  {sel:"#estimate", t:"Size it",
-  b:"Each defect is one Gemini image call, so 200 images at 2 defects each is roughly 400 calls. "+
-    "Start with 20 and look at the results before spending on a full run."},
+  b:"Each defect is one Gemini call. So 200 images with 2 defects each is about 400 calls. "+
+    "Start small and look at the results before you pay for a full run."},
  {sel:"#go", t:"Generate, then judge",
-  b:"Images stream in as they finish. Every box you see was <b>measured</b> by diffing the result "+
-    "against the base — the model is never asked where it put the defect, because it is not "+
-    "reliable at saying. Edits that changed nothing, or restyled the whole frame, are thrown away."},
+  b:"Images show up as they finish. Each box is <b>measured</b> by comparing the result to the "+
+    "base photo. The model is never asked where it put the defect — it is bad at telling you. "+
+    "Edits that changed nothing get thrown away."},
  {sel:"#cards", t:"Drop the bad ones",
-  b:"This is the part nobody should skip. Look at each card: does the box actually sit on a "+
-    "convincing defect? Hit <b>drop</b> on anything wrong. Dropped images never reach the zip, and "+
-    "a small clean set beats a big dirty one every time."},
+  b:"Do not skip this part. Look at each card. Does the box sit on a real-looking defect? "+
+    "Click <b>drop</b> on anything that looks wrong. Dropped images never reach the zip. A "+
+    "small clean set beats a big messy one."},
  {sel:"#zip", t:"Ship it to Roboflow",
-  b:"The zip contains <b>train/</b>, <b>valid/</b> and <b>test/</b>, each with its own "+
-    "_annotations.coco.json. Drag it into Roboflow and the splits are preserved."},
+  b:"The zip holds <b>train</b>, <b>valid</b> and <b>test</b> folders. Each has its own COCO "+
+    "file. Drag the zip into Roboflow and the splits stay as they are."},
 ];
 let step = 0, mandatory = false;
 const mask = document.createElement("div"); mask.id = "mask";
@@ -838,13 +856,16 @@ function place(){
   const s = TOUR[step], el = s.sel && document.querySelector(s.sel);
   const vis = el && el.offsetParent !== null && el.getBoundingClientRect().height > 0;
   if(!vis){
+    // no target yet: collapse the hole to nothing so the dark backdrop stays complete
     spot.classList.add("hidden");
+    spot.style.top = "50%"; spot.style.left = "50%"; spot.style.width = "0"; spot.style.height = "0";
     pop.style.top = "50%"; pop.style.left = "50%"; pop.style.transform = "translate(-50%,-50%)";
     return;
   }
   spot.classList.remove("hidden");
+  // mask is position:fixed, so viewport coords — never add scroll offsets here
   const r = el.getBoundingClientRect(), pad = 8;
-  spot.style.top = (r.top + scrollY - pad) + "px"; spot.style.left = (r.left + scrollX - pad) + "px";
+  spot.style.top = (r.top - pad) + "px"; spot.style.left = (r.left - pad) + "px";
   spot.style.width = (r.width + pad*2) + "px"; spot.style.height = (r.height + pad*2) + "px";
   pop.style.transform = "none";
   const ph = pop.offsetHeight || 190, below = r.bottom + 14;
