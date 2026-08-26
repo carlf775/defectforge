@@ -568,6 +568,11 @@ $("#fAnn").onchange = async e => {
   $("#annInfo").textContent = fileReport(files).text + " — reading…";
   const byPath = new Map(files.map(f => [f.webkitRelativePath || f.name, f]));
   const jsons = files.filter(f => f.name.endsWith(".json"));
+  if(!jsons.length){
+    $("#annInfo").textContent = fileReport(files).text +
+      " — no COCO .json in the selection; add one, or use \u201cdraw them here\u201d below";
+    return;
+  }
   state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[]; state.exemplars=[];
   const counts = new Map();
   for(const jf of jsons){
@@ -601,9 +606,11 @@ $("#fAnn").onchange = async e => {
     for(const im of imgs.values())
       if(!state.testImages.some(t => t.name===im.name)) state.testImages.push(im);
   }
-  $("#annInfo").textContent =
-    `${state.testImages.length} image(s), ${state.testAnns.length} annotation(s), ` +
-    `${state.cats.length} class(es) → test split`;
+  $("#annInfo").textContent = state.testAnns.length
+    ? `${state.testImages.length} image(s), ${state.testAnns.length} annotation(s), ` +
+      `${state.cats.length} class(es) → test split`
+    : "json found, but no annotations matched the images — check that the json's file_name " +
+      "entries match the image filenames in the folder";
   renderClasses(counts);
   ready();
 };
