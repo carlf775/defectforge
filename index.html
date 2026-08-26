@@ -318,8 +318,9 @@ Every mask measured from the pixels that changed.</p>
     </span>
   </div>
   <div class="stage"><canvas id="aCanvas"></canvas></div>
-  <div class="hint">pick a class, then drag a box around each defect · ←/→ change image ·
-    <b>z</b> undo · images without boxes are left out</div>
+  <div class="hint">pick a class, then click around the defect to place points — click the first
+    point again (or double-click / Enter) to close the mask · esc cancels the shape ·
+    <b>z</b> undo · ←/→ change image</div>
 </div>
 
 <div id="light">
@@ -911,13 +912,14 @@ window.selfTest = function(){
 };
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 /* ---------- built-in annotator ---------- */
-const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1, drag:null};
+const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1,
+              cur:[], mouse:null};
 $("#annotateHere").onclick = e => { e.preventDefault(); $("#fRaw").click(); };
 $("#fRaw").onchange = e => {
   const r = fileReport(e.target.files);
   anno.imgs = r.imgs;
   if(!anno.imgs.length){ $("#annInfo").textContent = r.text + " — nothing to annotate"; return; }
-  anno.idx = 0; anno.boxes = new Map(); anno.drag = null;
+  anno.idx = 0; anno.boxes = new Map(); anno.cur = []; anno.mouse = null;
   $("#anno").classList.add("on"); annoShow(0);
 };
 async function annoShow(i){
@@ -929,22 +931,32 @@ async function annoShow(i){
   c.width = Math.round(anno.bmp.width*anno.scale);
   c.height = Math.round(anno.bmp.height*anno.scale);
   annoDraw();
+  anno.cur = []; anno.mouse = null;
   $("#aCount").textContent = `${anno.idx+1} / ${anno.imgs.length} · ${anno.imgs[anno.idx].name}` +
-    ` · ${(anno.boxes.get(anno.idx)||[]).length} box(es)`;
+    ` · ${(anno.boxes.get(anno.idx)||[]).length} mask(s)`;
 }
 function annoDraw(){
-  const c = $("#aCanvas"), x = c.getContext("2d");
+  const c = $("#aCanvas"), x = c.getContext("2d"), k = anno.scale;
   x.drawImage(anno.bmp, 0, 0, c.width, c.height);
   x.lineWidth = 2; x.font = "600 12px sans-serif";
-  for(const b of anno.boxes.get(anno.idx)||[]){
-    x.strokeStyle = x.fillStyle = colorForLabel(b.cls);
-    x.strokeRect(b.x*anno.scale, b.y*anno.scale, b.w*anno.scale, b.h*anno.scale);
-    x.fillText(b.cls, b.x*anno.scale+3, Math.max(11, b.y*anno.scale-4));
+  for(const sh of anno.boxes.get(anno.idx)||[]){
+    const col = colorForLabel(sh.cls);
+    x.strokeStyle = x.fillStyle = col;
+    x.beginPath();
+    sh.poly.forEach(([px,py],i) => i ? x.lineTo(px*k,py*k) : x.moveTo(px*k,py*k));
+    x.closePath();
+    x.globalAlpha = .2; x.fill(); x.globalAlpha = 1; x.stroke();
+    x.fillText(sh.cls, sh.poly[0][0]*k+4, Math.max(11, sh.poly[0][1]*k-6));
   }
-  if(anno.drag){
-    x.strokeStyle = "#fff"; x.setLineDash([5,4]);
-    x.strokeRect(anno.drag.x0, anno.drag.y0, anno.drag.x1-anno.drag.x0, anno.drag.y1-anno.drag.y0);
-    x.setLineDash([]);
+  if(anno.cur.length){                       // polygon in progress
+    x.strokeStyle = "#fff"; x.fillStyle = "#fff";
+    x.beginPath();
+    anno.cur.forEach(([px,py],i) => i ? x.lineTo(px*k,py*k) : x.moveTo(px*k,py*k));
+    if(anno.mouse) x.lineTo(anno.mouse[0], anno.mouse[1]);
+    x.setLineDash([5,4]); x.stroke(); x.setLineDash([]);
+    for(const [px,py] of anno.cur){ x.beginPath(); x.arc(px*k,py*k,3,0,7); x.fill(); }
+    // first vertex gets a ring: click it to close (Roboflow convention)
+    x.beginPath(); x.arc(anno.cur[0][0]*k, anno.cur[0][1]*k, 7, 0, 7); x.stroke();
   }
 }
 function annoClasses(){
@@ -966,28 +978,34 @@ $("#aNew").onkeydown = e => {
 };
 const aPos = e => { const r = $("#aCanvas").getBoundingClientRect();
   return [e.clientX - r.left, e.clientY - r.top]; };
+function annoClose(){                        // close the in-progress polygon
+  if(anno.cur.length >= 3){
+    if(!anno.boxes.has(anno.idx)) anno.boxes.set(anno.idx, []);
+    anno.boxes.get(anno.idx).push({poly: anno.cur, cls: anno.cls});
+  }
+  anno.cur = []; anno.mouse = null; annoShow(anno.idx);
+}
 $("#aCanvas").onpointerdown = e => {
   if(!anno.cls){ $("#aNew").focus(); $("#aNew").placeholder = "name a class first!"; return; }
-  const [px,py] = aPos(e);
-  anno.drag = {x0:px, y0:py, x1:px, y1:py};
-  $("#aCanvas").setPointerCapture(e.pointerId);
-};
-$("#aCanvas").onpointermove = e => {
-  if(!anno.drag) return;
-  [anno.drag.x1, anno.drag.y1] = aPos(e); annoDraw();
-};
-$("#aCanvas").onpointerup = () => {
-  const d = anno.drag; anno.drag = null;
-  if(!d) return;
-  const x = Math.min(d.x0,d.x1)/anno.scale, y = Math.min(d.y0,d.y1)/anno.scale;
-  const w = Math.abs(d.x1-d.x0)/anno.scale, h = Math.abs(d.y1-d.y0)/anno.scale;
-  if(w >= 4 && h >= 4){
-    if(!anno.boxes.has(anno.idx)) anno.boxes.set(anno.idx, []);
-    anno.boxes.get(anno.idx).push({x, y, w, h, cls:anno.cls});
+  const [cx,cy] = aPos(e);
+  // clicking the first vertex again closes (Roboflow convention)
+  if(anno.cur.length >= 3){
+    const [fx,fy] = anno.cur[0];
+    if(Math.hypot(fx*anno.scale-cx, fy*anno.scale-cy) < 10) return annoClose();
   }
-  annoShow(anno.idx);
+  anno.cur.push([cx/anno.scale, cy/anno.scale]);
+  annoDraw();
 };
-$("#aUndo").onclick = () => { (anno.boxes.get(anno.idx)||[]).pop(); annoShow(anno.idx); };
+$("#aCanvas").ondblclick = () => annoClose();   // double-click also closes
+$("#aCanvas").onpointermove = e => {
+  if(!anno.cur.length) return;
+  anno.mouse = aPos(e); annoDraw();
+};
+$("#aUndo").onclick = () => {
+  if(anno.cur.length) anno.cur.pop();           // first undo vertices...
+  else (anno.boxes.get(anno.idx)||[]).pop();    // ...then whole shapes
+  annoDraw(); annoShow(anno.idx);
+};
 $("#aPrev").onclick = () => annoShow(anno.idx-1);
 $("#aNext").onclick = () => annoShow(anno.idx+1);
 $("#aClose").onclick = () => $("#anno").classList.remove("on");
@@ -996,7 +1014,11 @@ addEventListener("keydown", e => {
   if(e.key === "ArrowRight") annoShow(anno.idx+1);
   if(e.key === "ArrowLeft") annoShow(anno.idx-1);
   if(e.key === "z") $("#aUndo").click();
-  if(e.key === "Escape") $("#aClose").click();
+  if(e.key === "Enter") annoClose();
+  if(e.key === "Escape"){
+    if(anno.cur.length){ anno.cur = []; anno.mouse = null; annoDraw(); }
+    else $("#aClose").click();
+  }
 });
 async function annoCoco(){
   const images = [], annotations = [], cats = [];
@@ -1008,13 +1030,21 @@ async function annoCoco(){
     images.push({id:++iid, file_name:anno.imgs[i].name, width:bmp.width, height:bmp.height,
                  license:0, date_captured:""});
     bmp.close();
-    for(const b of list){
-      if(!catId.has(b.cls)){ catId.set(b.cls, catId.size+1);
-        cats.push({id:catId.size, name:b.cls, supercategory:"defect"}); }
-      const [x,y,w,h] = [b.x,b.y,b.w,b.h].map(Math.round);
-      annotations.push({id:aid++, image_id:iid, category_id:catId.get(b.cls),
-        bbox:[x,y,w,h], area:w*h, iscrowd:0,
-        segmentation:[[x,y, x+w,y, x+w,y+h, x,y+h]]});
+    for(const sh of list){
+      if(!catId.has(sh.cls)){ catId.set(sh.cls, catId.size+1);
+        cats.push({id:catId.size, name:sh.cls, supercategory:"defect"}); }
+      const poly = sh.poly.map(([px,py]) => [Math.round(px), Math.round(py)]);
+      const xs = poly.map(p=>p[0]), ys = poly.map(p=>p[1]);
+      const x = Math.min(...xs), y = Math.min(...ys);
+      const w = Math.max(...xs)-x, h = Math.max(...ys)-y;
+      let area = 0;                                   // shoelace
+      for(let i=0;i<poly.length;i++){
+        const [ax,ay] = poly[i], [bx,by] = poly[(i+1)%poly.length];
+        area += ax*by - bx*ay;
+      }
+      annotations.push({id:aid++, image_id:iid, category_id:catId.get(sh.cls),
+        bbox:[x,y,w,h], area:Math.round(Math.abs(area)/2), iscrowd:0,
+        segmentation:[poly.flat()]});
     }
   }
   return {info:{description:"annotated in DefectForge"}, licenses:[{id:0,name:"",url:""}],
