@@ -56,7 +56,7 @@ def trace_poly(comp):
     h, w = comp.shape
     at = lambda x, y: 0 <= x < w and 0 <= y < h and comp[y, x]
     pts, cx, cy, dr = [(sx, sy)], sx, sy, 6      # topmost-left start: nothing above it
-    for _ in range(40000):
+    for _ in range(400000):
         for i in range(8):
             dd = (dr + i) % 8
             nx, ny = cx + D[dd][0], cy + D[dd][1]
@@ -68,7 +68,7 @@ def trace_poly(comp):
             break                                # isolated pixel
         if (cx, cy) == (sx, sy):
             break
-    step = max(1, len(pts) // 60)
+    step = max(1, len(pts) // 2000)          # keep every boundary pixel unless absurd
     out = pts[::step]
     return out if len(out) >= 3 else pts
 

@@ -31,8 +31,6 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
-header .tag{margin-left:auto;font-size:12px;letter-spacing:.14em;text-transform:uppercase;
-  color:var(--muted)}
 .sub{color:var(--muted);margin:0 0 30px;max-width:64ch;font-size:14.5px}
 .sub b{color:var(--ink);font-weight:600}
 section{background:rgba(255,255,255,.05);
@@ -114,7 +112,6 @@ a:hover{border-bottom-color:var(--ok)}
 .stat{font-variant-numeric:tabular-nums}
 footer{margin-top:26px;font-size:12.5px;color:var(--muted)}
 header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;background:transparent}
-header .tag{margin-left:14px}
 #mask{position:fixed;inset:0;z-index:100;display:none}
 #mask.on{display:block}
 #spot{position:absolute;border-radius:var(--radius);border:1px solid var(--ok);
@@ -171,7 +168,6 @@ header .tag{margin-left:14px}
   <img class="mark" src="vendor/icon.png" width="26" height="26" alt="">
   <h1>DefectForge</h1>
   <button id="guide" class="ghost">Guided tour</button>
-  <span class="tag">deepvis</span>
 </header>
 <p class="sub">Your annotated defect images become the <b>test</b> split, untouched. Your good
 (defect-free) images are the bases Gemini paints new defects onto for <b>train</b> and <b>valid</b>.
@@ -402,7 +398,7 @@ function tracePoly(comp, w, h){          // Moore boundary trace of one connecte
   const at = (x,y) => x>=0 && y>=0 && x<w && y<h && comp[y*w+x];
   const pts = [[sx,sy]];
   let cx = sx, cy = sy, dir = 6;            // start pixel is topmost-left, so nothing above it
-  for(let g=0; g<40000; g++){
+  for(let g=0; g<400000; g++){
     let moved = false;
     for(let i=0;i<8;i++){
       const dd = (dir+i)%8, nx = cx+D[dd][0], ny = cy+D[dd][1];
@@ -410,14 +406,14 @@ function tracePoly(comp, w, h){          // Moore boundary trace of one connecte
     }
     if(!moved || (cx===sx && cy===sy)) break;
   }
-  const step = Math.max(1, Math.floor(pts.length/60));   // ~60 vertices is plenty
+  const step = Math.max(1, Math.floor(pts.length/2000)); // keep every pixel unless absurd
   const out = pts.filter((_,i) => i%step===0);
   return out.length >= 3 ? out : pts;
 }
 
 function diffBBox(before, after){
   if(before.width!==after.width || before.height!==after.height) return null;
-  const s = Math.min(1, 512/Math.max(before.width,before.height));
+  const s = 1;                                // full resolution: masks are pixel-exact
   const A = imageDataAt(before,s), B = imageDataAt(after,s);
   const w=A.width, h=A.height, n=w*h, d=new Uint8Array(n);
   let max=0;
