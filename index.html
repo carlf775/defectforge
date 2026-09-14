@@ -32,21 +32,27 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
 .sub{color:var(--muted);margin:0 0 16px;max-width:64ch;font-size:14.5px}
-#guidebox{position:absolute;z-index:60;width:330px;padding:16px 18px;
-  background:color-mix(in srgb,var(--ok) 14%,var(--bg));
-  border:2px solid color-mix(in srgb,var(--ok) 65%,transparent);
-  border-radius:11px;font-size:14.5px;line-height:1.6;
-  box-shadow:0 10px 34px rgba(0,0,0,.35)}
-#guidebox b{color:var(--ok)}
-#guidebox .how{font-size:12.5px;color:var(--muted);margin-top:9px}
+#guidebox{position:absolute;z-index:60;width:400px;padding:20px 22px;
+  background:color-mix(in srgb,var(--ok) 20%,var(--bg));
+  border:3px solid var(--ok);
+  border-radius:13px;font-size:16.5px;line-height:1.65;
+  box-shadow:0 14px 44px rgba(0,0,0,.5)}
+#guidebox b{color:var(--ok);font-size:18px}
+#guidebox::before{content:"👉";font-size:22px;position:absolute;right:-38px;top:50%;
+  transform:translateY(-50%)}
+#guidebox .how{font-size:13px;color:var(--muted);margin-top:10px}
 #guidebox ol{margin:7px 0 0;padding-left:19px}
 #guidebox ol li{margin-bottom:4px}
 @media (max-width:1240px){
   #guidebox{position:fixed !important;left:12px !important;right:12px;bottom:12px;
     top:auto !important;width:auto}
+  #guidebox::before{content:none}
 }
-.next-glow{outline:3px solid var(--ok);outline-offset:3px;border-radius:var(--radius);
-  transition:outline-color .3s}
+.next-glow{outline:4px solid var(--ok);outline-offset:4px;border-radius:var(--radius);
+  animation:glowpulse 1.6s ease-in-out infinite}
+@keyframes glowpulse{
+  0%,100%{outline-color:var(--ok)}
+  50%{outline-color:color-mix(in srgb,var(--ok) 35%,transparent)}}
 .sub b{color:var(--ink);font-weight:600}
 section{background:rgba(255,255,255,.05);
   -webkit-backdrop-filter:blur(22px) saturate(1.35);backdrop-filter:blur(22px) saturate(1.35);
