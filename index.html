@@ -736,7 +736,9 @@ const GUIDE_STEPS = [
   [() => !$("#key").value.trim(), "#key", () =>
    `<b>Paste your Gemini key.</b>
     <div class="how">Get one at <a href="https://aistudio.google.com/apikey" target="_blank"
-    rel="noopener">aistudio.google.com/apikey</a> · it stays in this browser.</div>`],
+    rel="noopener">aistudio.google.com/apikey</a> · it stays in this browser ·
+    image models need billing enabled on the key (“Set up billing”) — pay per call, cents
+    for a preview.</div>`],
   [() => !state.exemplars.length, "#dropAnn", () =>
    `<b>Add photos that HAVE defects.</b>
     <div class="how">A folder with images + COCO json.
@@ -1001,7 +1003,10 @@ async function run(jobs, tag){
   };
   await Promise.all(Array.from({length:+$("#conc").value||4}, worker));
   running = false; $("#stop").disabled = true; $("#zip").disabled = !state.results.length;
-  log(abort ? "stopped" : (tag ? "preview done — check the images, adjust, then run the batch" : "done"));
+  const made = state.results.length;
+  log(abort ? "stopped"
+      : !made ? "finished, but 0 images were kept — see the errors above (the guide box explains the fix)"
+      : (tag ? "preview done — check the images, adjust, then run the batch" : "done"));
   ready();
 }
 const jobList = (n, split) => Array.from({length:n}, () => [split, state.job++]);
