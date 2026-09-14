@@ -31,7 +31,14 @@ body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
 header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
-.sub{color:var(--muted);margin:0 0 30px;max-width:64ch;font-size:14.5px}
+.sub{color:var(--muted);margin:0 0 16px;max-width:64ch;font-size:14.5px}
+#nextbar{position:sticky;top:8px;z-index:50;margin:0 0 22px;padding:11px 15px;
+  background:color-mix(in srgb,var(--ok) 16%,var(--bg));
+  border:1px solid color-mix(in srgb,var(--ok) 50%,transparent);
+  border-radius:9px;font-size:14.5px;line-height:1.5}
+#nextbar b{color:var(--ok)}
+.next-glow{outline:3px solid var(--ok);outline-offset:3px;border-radius:var(--radius);
+  transition:outline-color .3s}
 .sub b{color:var(--ink);font-weight:600}
 section{background:rgba(255,255,255,.05);
   -webkit-backdrop-filter:blur(22px) saturate(1.35);backdrop-filter:blur(22px) saturate(1.35);
@@ -181,6 +188,8 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
 <p class="sub">Annotated defects + good images in, a Roboflow-ready synthetic dataset out.
 Every mask measured from the pixels that changed.</p>
 
+<div id="nextbar"><b>Next:</b> <span id="nextmsg"></span></div>
+
 <section>
   <h2><i>1</i>Gemini</h2>
   <div class="grid g2">
@@ -221,7 +230,8 @@ Every mask measured from the pixels that changed.</p>
   <h2><i>2</i>Input</h2>
   <div class="grid g2">
     <div>
-      <label>Annotated defects (images + COCO json) → test split</label>
+      <label>Photos <b>with</b> defects — the AI learns what defects look like from these
+        <span style="opacity:.6">(images + COCO json; kept real → test split)</span></label>
       <div class="drop" id="dropAnn"><b>Choose folder</b> ·
         <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
         or drop them here</div>
@@ -233,12 +243,15 @@ Every mask measured from the pixels that changed.</p>
       <div id="annInfo" class="note"></div>
     </div>
     <div>
-      <label>Good items (defect-free) → bases for train/valid</label>
+      <label>Photos of your items <b>without</b> defects — defects get painted onto these
+        <span style="opacity:.6">(→ train/valid)</span></label>
       <div class="drop" id="dropGood"><b>Choose folder</b> ·
         <a href="#" id="pickGoodFiles" onclick="event.stopPropagation()">pick files</a> ·
         or drop them here</div>
       <input type="file" id="fGood" webkitdirectory directory multiple>
-      <input type="file" id="fGoodF" accept="image/*" multiple>
+      <input type="file" id="fGoodF" accept="image/*,.json" multiple>
+      <div class="note" style="margin-top:7px">optional: include a COCO json of weld-zone
+        polygons over these images — defects are then aimed at and kept inside them</div>
       <div id="goodInfo" class="note"></div>
     </div>
   </div>
@@ -376,7 +389,7 @@ const PROMPT = (cat, region, size, sev, hint) =>
 Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.
 
 Edit image 1 so the item has exactly one realistic "${cat}" defect of the same type, appearance and
-texture as image 2, in the ${region} area of the item. The defect should span roughly ${size}% of the
+texture as image 2, in the ${region} of the item. The defect should span roughly ${size}% of the
 image width. ${sev}${hint ? " " + hint.trim() : ""}
 
 Critical: change nothing else. Same camera angle, framing, crop, zoom, lighting, white balance,
@@ -566,12 +579,64 @@ function fileReport(files){
     text: `picked ${all.length} file(s): ${imgs.length} image(s), ${js.length} json` +
       (other ? `, ${other} other (skipped — only jpg/png/bmp/webp images load)` : "")};
 }
-$("#fGood").onchange = e => {
+$("#fGood").onchange = async e => {
   const r = fileReport(e.target.files);
   state.goods = r.imgs;
-  $("#goodInfo").textContent = r.text;
+  state.zones = null; zoneCache.clear();
+  let ztext = "";
+  for(const jf of r.js){
+    try{
+      const coco = JSON.parse(await jf.text());
+      if(!coco.images || !coco.annotations) continue;
+      const byId = new Map(coco.images.map(i => [i.id, i]));
+      const zones = {};
+      for(const a of coco.annotations){
+        const im = byId.get(a.image_id); if(!im) continue;
+        let polys = (a.segmentation || []).filter(p => Array.isArray(p) && p.length >= 6);
+        if(!polys.length && a.bbox){
+          const [x,y,w,h] = a.bbox; polys = [[x,y, x+w,y, x+w,y+h, x,y+h]];
+        }
+        if(!polys.length) continue;
+        const z = zones[im.file_name] ??= {size:[im.width, im.height], polys:[]};
+        z.polys.push(...polys);
+      }
+      const covered = state.goods.filter(f => zones[f.name]).length;
+      if(covered){
+        state.zones = zones;
+        ztext = ` · placement zones for ${covered}/${state.goods.length} image(s) — ` +
+                `defects will be aimed at and kept inside them`;
+        break;
+      }
+    }catch(_){/* not a usable COCO json — ignore */}
+  }
+  $("#goodInfo").textContent = r.text + ztext;
   ready();
 };
+
+/* placement zones: rasterize a good image's zone polygons once per size */
+const zoneCache = new Map();
+function zoneFor(name, w, h){
+  if(!state.zones || !state.zones[name]) return null;
+  const key = `${name}|${w}x${h}`;
+  if(zoneCache.has(key)) return zoneCache.get(key);
+  const z = state.zones[name];
+  const c = document.createElement("canvas"); c.width = w; c.height = h;
+  const x = c.getContext("2d", {willReadFrequently:true});
+  const sx = w / z.size[0], sy = h / z.size[1];
+  x.fillStyle = "#fff";
+  for(const p of z.polys){
+    x.beginPath();
+    x.moveTo(p[0]*sx, p[1]*sy);
+    for(let i = 2; i < p.length; i += 2) x.lineTo(p[i]*sx, p[i+1]*sy);
+    x.closePath(); x.fill();
+  }
+  const data = x.getImageData(0, 0, w, h).data;
+  const mask = new Uint8Array(w*h), pts = [];
+  for(let i = 0; i < w*h; i++) if(data[i*4]){ mask[i] = 1; pts.push(i); }
+  const zone = pts.length ? {mask, pts, w, h} : null;
+  zoneCache.set(key, zone);
+  return zone;
+}
 
 $("#fAnn").onchange = async e => {
   const files = [...e.target.files];
@@ -654,6 +719,32 @@ function ready(){
   const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
   $("#estimate").textContent = `Batch: ${n} images · about ${Math.round(n*avg)} Gemini image calls.`
     + ` Preview 3 first — it costs about ${Math.round(3*avg)} calls and tells you whether the rest is worth paying for.`;
+  nextStep();
+}
+
+/* one plain sentence saying what the tool needs next, pointing at where to do it */
+const NEXT_STEPS = [
+  [() => !$("#key").value.trim(), "#key",
+   "Paste your Gemini API key — it does the image editing. No key yet? Click “get one here”."],
+  [() => !state.exemplars.length, "#dropAnn",
+   "Add photos that HAVE defects, plus their annotation file — the AI learns what defects look like from these. No annotated photos? Click “draw them here”."],
+  [() => !state.goods.length, "#dropGood",
+   "Add photos of your own items WITHOUT defects — the defects get painted onto these."],
+  [() => { try { return !chosen().length } catch(e){ return true } }, "#classBox",
+   "Tick at least one defect type to generate."],
+];
+let nextGlowEl = null;
+function nextStep(){
+  const step = NEXT_STEPS.find(([need]) => need());
+  const [, sel, msg] = step || [null, "#try",
+    "Everything is set. Click Preview 3 — three trial images, so you can judge the results before paying for a full batch."];
+  $("#nextmsg").textContent = msg;
+  const el = $(sel);
+  if(nextGlowEl !== el){
+    nextGlowEl?.classList.remove("next-glow");
+    el.classList.add("next-glow");
+    nextGlowEl = el;
+  }
 }
 ["#key","#ntrain","#nvalid","#mind","#maxd"].forEach(s => $(s).oninput = ready);
 const KEY = "df_key";
@@ -720,8 +811,10 @@ async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint){
 /* ---------- generation ---------- */
 async function generateOne(split, idx, weights, hint, tag){
   const rnd = mulberry32((+$("#seed").value||1)*7919 + idx*104729 + (split==="valid"?13:0));
-  const bmp = await createImageBitmap(pick(rnd, state.goods));
+  const goodFile = pick(rnd, state.goods);
+  const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
+  const zone = zoneFor(goodFile.name, cur.width, cur.height);
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -730,7 +823,15 @@ async function generateOne(split, idx, weights, hint, tag){
     const ex = pick(rnd, weights);
     const crop = await cropCanvas(ex);
     const [lo,hi] = SIZES[sizeChoice()];
-    const region = pick(rnd, CELLS), size = randint(rnd, lo, hi);
+    let region;
+    if(zone){
+      const i = zone.pts[Math.floor(rnd()*zone.pts.length)];
+      const tx = i % zone.w, ty = Math.floor(i / zone.w);
+      const cell = CELLS[3*Math.min(2, Math.floor(ty*3/zone.h))
+                         + Math.min(2, Math.floor(tx*3/zone.w))];
+      region = `${cell} area, directly on the weld seam`;
+    }else region = `${pick(rnd, CELLS)} area`;
+    const size = randint(rnd, lo, hi);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
     for(let att=0; att<=retries && !abort; att++){
       let out;
@@ -740,6 +841,14 @@ async function generateOne(split, idx, weights, hint, tag){
       if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
       const m = diffBBox(cur, oc);
       if(m && plausible(m.box, cur.width, cur.height)){
+        if(zone){
+          const [bx,by,bw,bh] = m.box;
+          const cx = Math.min(zone.w-1, bx + (bw>>1)), cy = Math.min(zone.h-1, by + (bh>>1));
+          if(!zone.mask[cy*zone.w + cx]){
+            log(`  · ${split} ${idx}: defect landed off the weld zone, retrying`);
+            continue;
+          }
+        }
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
@@ -902,12 +1011,20 @@ window.selfTest = function(){
   sx.globalAlpha=0.25; sx.fillStyle="#fff"; sx.fillRect(0,0,320,240);
   const g = diffBBox(c, shift);
   const okGlobal = !g || !plausible(g.box, 320, 240);
+  // placement zone: rasterized polygon must contain the defect center and not the far corner
+  const saved = state.zones; state.zones = {"__st.png": {size:[320,240],
+    polys:[[90,50, 180,50, 180,120, 90,120]]}};
+  const z = zoneFor("__st.png", 320, 240);
+  const inZ = (px,py) => !!(z && z.mask[py*z.w + px]);
+  const okZone = z && inZ(130,85) && !inZ(300,220);
+  state.zones = saved; zoneCache.delete("__st.png|320x240");
   const msg = `bbox ${JSON.stringify(box)} ${okBox?"ok":"FAIL"} · unchanged ${okSame?"ok":"FAIL"}`
             + ` · global restyle rejected ${okGlobal?"ok":"FAIL"} · strength ${m&&m.strength}`
             + ` ${okStrength?"ok":"FAIL"} · poly ${m&&m.poly.length}pts ${okPoly?"ok":"FAIL"}`
-            + ` · mask area ${m&&m.maskArea} ${okArea?"ok":"FAIL"}`;
+            + ` · mask area ${m&&m.maskArea} ${okArea?"ok":"FAIL"}`
+            + ` · placement zone ${okZone?"ok":"FAIL"}`;
   log(msg);
-  return okBox && okSame && okGlobal && okStrength && okPoly && okArea
+  return okBox && okSame && okGlobal && okStrength && okPoly && okArea && okZone
     ? "PASS " + msg : "FAIL " + msg;
 };
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };

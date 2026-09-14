@@ -1,4 +1,9 @@
-synthetic/
-*.zip
-__pycache__/
+.DS_Store
+.claude/
 .venv/
+data/
+parts/
+runs/
+scratch/
+train/
+*.pt

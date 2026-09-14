@@ -1,6 +1,32 @@
 # Project log — DefectForge & weld-defect pipeline
 
-Updated: 2026-08-28
+Updated: 2026-09-14
+
+## Session 2026-09-14 (and 2026-08-28) — pipeline execution on Carl's parts
+
+- **Part radiographs on this machine**: `parts/partA` (4) + `parts/partB` (3), 2048×512,
+  rendered from the 16-bit DICOMs in `~/Desktop/Xray JP /` with `tools/dcm_to_png.py`
+  (log transform + CLAHE — the vendor 8-bit PNGs clip thick sections to black; always
+  re-render from DICOM). `parts/all/` = the 7 PNGs + `weld_zones.coco.json`
+  (hand-drawn weld_seam polygons, one per image, drawn in the app's annotator).
+  parts/ and data/ are gitignored — client imagery stays out of the public repo.
+- **Placement zones shipped** (browser + CLI): a COCO json of zone polygons included with
+  the good images aims each defect at the zone and rejects (measured) off-zone edits.
+  CLI: `--regions zones.json --region-desc "the weld seam"`. Selftests cover it.
+- **"Next:" guidance bar** in the app: plain-language, state-driven next-step strip.
+  Carl wants all guidance purpose-first and ultra-simple — no shortcut recipes.
+- **Seam finder DONE**: `runs/segment/train/runs/seam_mix_ft/weights/best.pt`.
+  Recipe that worked: SWRD pretrain (yolo11n-seg, 960px, box mAP50 0.945) then fine-tune
+  on 200 SWRD + the 6 part-train images repeated 30× (val = held-out part image,
+  mask mAP50 0.995). Zero-shot SWRD→parts does NOT work (whole-frame boxes).
+- **Defect detector pretraining** (yolo11s-seg, 6 SWRD classes, 960px) launched — check
+  `runs/segment/train/runs/defect_pretrain/`.
+- **Two parts now, not one**: per part reserve 1 image for the unseen-background test
+  split; the rest are generation bases. Part A weld = tube-to-fitting joint;
+  Part B welds marked by lead Y/M letters. OPEN QUESTION: does "Soudure M" (no "ok")
+  contain a real defect? If yes it must leave the good-bases and becomes real test data.
+- Gemini key: Carl's free-tier key is fine for Preview 3; full batch (~225 image calls,
+  ≈$9–10) needs billing enabled on the key.
 
 ## What exists
 

@@ -36,7 +36,7 @@ PROMPT = """You are producing training data for an automated visual defect-inspe
 Image 1: a defect-free item. Image 2: a close-up crop of a real "{cat}" defect from another item.
 
 Edit image 1 so the item has exactly one realistic "{cat}" defect of the same type, appearance and
-texture as image 2, in the {region} area of the item. The defect should span roughly {size}% of the
+texture as image 2, in the {region} of the item. The defect should span roughly {size}% of the
 image width.{hint}
 
 Critical: change nothing else. Same camera angle, framing, crop, zoom, lighting, white balance,
@@ -89,7 +89,7 @@ def diff_bbox(before, after):
         return None
     biggest = 1 + int(np.argmax(ndimage.sum(mask, lbl, range(1, n + 1))))
     comp = lbl == biggest
-    ys, xs = ndimage.find_objects(comp)[0]
+    ys, xs = ndimage.find_objects(comp.astype(np.uint8))[0]
     box = [int(xs.start), int(ys.start), int(xs.stop - xs.start), int(ys.stop - ys.start)]
     return {"box": box, "poly": trace_poly(comp), "mask_area": int(comp.sum()),
             "strength": int(d[comp].mean() / 255 * 100)}
@@ -101,6 +101,44 @@ def plausible(box, size, lo=5e-5, hi=0.25):
         return False
     frac = (box[2] * box[3]) / float(size[0] * size[1])
     return lo <= frac <= hi and box[2] >= 4 and box[3] >= 4
+
+
+# ---------- placement regions ----------
+
+def load_regions(path):
+    """COCO json -> {file_name: {"size": (w, h), "polys": [flat xy list, ...]}}.
+
+    Any annotation counts as an allowed placement zone for its image; images the
+    json does not mention stay unconstrained.
+    """
+    coco = json.loads(Path(path).read_text())
+    by_id = {i["id"]: i for i in coco["images"]}
+    regions = {}
+    for a in coco["annotations"]:
+        im = by_id[a["image_id"]]
+        polys = [p for p in (a.get("segmentation") or [])
+                 if isinstance(p, list) and len(p) >= 6]
+        if not polys and a.get("bbox"):
+            x, y, w, h = a["bbox"]
+            polys = [[x, y, x + w, y, x + w, y + h, x, y + h]]
+        e = regions.setdefault(im["file_name"],
+                               {"size": (im["width"], im["height"]), "polys": []})
+        e["polys"].extend(polys)
+    return regions
+
+
+def region_mask(entry, size, _cache={}):
+    """Rasterize an image's region polygons -> bool array at `size` (w, h)."""
+    key = (id(entry), size)
+    if key not in _cache:
+        m = Image.new("L", entry["size"], 0)
+        d = ImageDraw.Draw(m)
+        for p in entry["polys"]:
+            d.polygon(list(zip(p[0::2], p[1::2])), fill=255)
+        if m.size != size:
+            m = m.resize(size, Image.NEAREST)
+        _cache[key] = np.asarray(m, bool)
+    return _cache[key]
 
 
 # ---------- dataset io ----------
@@ -180,8 +218,13 @@ def gemini_editor(client, model):
     return edit
 
 
-def make_image(edit, cfg, base_path, by_cat, weights, names, rng):
-    """-> (image, [(category_id, bbox), ...])"""
+def make_image(edit, cfg, base_path, by_cat, weights, names, rng, zone=None):
+    """-> (image, [(category_id, bbox), ...]).
+
+    `zone`: optional bool mask (h, w) of allowed defect placement. The prompt is
+    aimed at a point sampled inside it, and any measured defect whose bbox
+    center lands outside it is rejected and retried.
+    """
     img = Image.open(base_path).convert("RGB")
     boxes = []
     cats = list(weights)
@@ -189,7 +232,16 @@ def make_image(edit, cfg, base_path, by_cat, weights, names, rng):
         cat_id = rng.choices(cats, weights=[weights[c] for c in cats])[0]
         ex = rng.choice(by_cat[cat_id])
         crop = exemplar_crop(ex)
-        region, size_pct = rng.choice(CELLS), rng.randint(4, 18)
+        size_pct = rng.randint(4, 18)
+        if zone is not None:
+            ys, xs = np.nonzero(zone)
+            j = rng.randrange(len(xs))
+            tx, ty = int(xs[j]), int(ys[j])
+            h, w = zone.shape
+            cell = CELLS[3 * min(2, ty * 3 // h) + min(2, tx * 3 // w)]
+            region = f"{cell} area, directly on {cfg.get('region_desc', 'the weld seam')}"
+        else:
+            region = f"{rng.choice(CELLS)} area"
         for attempt in range(cfg["retries"] + 1):
             try:
                 out = edit(img, crop, names[cat_id], region, size_pct, cfg.get("hint", ""))
@@ -202,10 +254,18 @@ def make_image(edit, cfg, base_path, by_cat, weights, names, rng):
             if out.size != img.size:
                 out = out.resize(img.size, Image.LANCZOS)
             m = diff_bbox(img, out)
-            if m and plausible(m["box"], img.size):
-                boxes.append((cat_id, m))
-                img = out                               # stack the next defect on this result
-                break
+            if not (m and plausible(m["box"], img.size)):
+                continue
+            if zone is not None:
+                x, y, bw, bh = m["box"]
+                cy = min(zone.shape[0] - 1, y + bh // 2)
+                cx = min(zone.shape[1] - 1, x + bw // 2)
+                if not zone[cy, cx]:
+                    print(f"  . defect landed off-zone, retrying", file=sys.stderr)
+                    continue
+            boxes.append((cat_id, m))
+            img = out                               # stack the next defect on this result
+            break
     return img, boxes
 
 
@@ -222,7 +282,8 @@ def draw_preview(img, boxes, names):
     return p
 
 
-def build_split(edit, cfg, split, count, goods, exemplars, weights, coco, names, on_result=None):
+def build_split(edit, cfg, split, count, goods, exemplars, weights, coco, names,
+                on_result=None, regions=None):
     out_dir = Path(cfg["out"]) / split
     out_dir.mkdir(parents=True, exist_ok=True)
     prev_dir = Path(cfg["out"]) / "preview" / split
@@ -232,7 +293,12 @@ def build_split(edit, cfg, split, count, goods, exemplars, weights, coco, names,
 
     def task(i):
         rng = random.Random(f"{cfg['seed']}-{split}-{i}")
-        img, boxes = make_image(edit, cfg, rng.choice(goods), by_cat, weights, names, rng)
+        base = rng.choice(goods)
+        zone = None
+        if regions and Path(base).name in regions:
+            with Image.open(base) as im:
+                zone = region_mask(regions[Path(base).name], im.size)
+        img, boxes = make_image(edit, cfg, base, by_cat, weights, names, rng, zone)
         if not boxes:
             print(f"  {split} {i}: no usable defect, skipped", file=sys.stderr)
             return None
@@ -346,6 +412,22 @@ def selftest():
     on_disk = Image.open(tmp / "ds" / "train" / im["file_name"])
     assert (im["width"], im["height"]) == on_disk.size
     assert {i["id"] for i in js["images"]} == {1, 2, 3}
+
+    # placement zones: stub paints at (40..90, 30..70); a zone elsewhere must reject it,
+    # a zone over it must accept, and an uncovered image must stay unconstrained
+    regions = {"good.png": {"size": base.size,
+                            "polys": [[200, 100, 310, 100, 310, 200, 200, 200]]}}
+    zone = region_mask(regions["good.png"], base.size)
+    assert not zone[50, 65] and zone[150, 250]
+    by_cat = {1: exemplars}
+    _, rejected = make_image(stub, cfg, tmp / "good.png", by_cat, {1: 1.0},
+                             {1: "scratch"}, random.Random(0), zone)
+    assert not rejected, "off-zone defect must be rejected"
+    hit = region_mask({"size": base.size, "polys": [[30, 20, 100, 20, 100, 80, 30, 80]]},
+                      base.size)
+    _, accepted = make_image(stub, cfg, tmp / "good.png", by_cat, {1: 1.0},
+                             {1: "scratch"}, random.Random(0), hit)
+    assert accepted, "on-zone defect must be kept"
     shutil.rmtree(tmp)
     print("selftest ok")
 
@@ -360,6 +442,11 @@ def main():
     ap.add_argument("--valid", type=int, default=50)
     ap.add_argument("--classes", default="", help='e.g. "scratch:2,dent:1" (default: all, natural mix)')
     ap.add_argument("--hint", default="", help="extra sentence appended to the prompt")
+    ap.add_argument("--regions", help="COCO json of allowed placement zones per good image "
+                                      "(e.g. hand-drawn weld_seam polygons); defects are aimed "
+                                      "inside them and rejected if measured outside")
+    ap.add_argument("--region-desc", default="the weld seam",
+                    help='how the prompt names the allowed zone (default "the weld seam")')
     ap.add_argument("--min-defects", type=int, default=1)
     ap.add_argument("--max-defects", type=int, default=2)
     ap.add_argument("--model", default="gemini-2.5-flash-image")
@@ -393,14 +480,22 @@ def main():
     weights = parse_classes(args.classes, exemplars, names)
     cfg = {"out": args.out, "seed": args.seed, "workers": args.workers, "retries": args.retries,
            "min_defects": args.min_defects, "max_defects": args.max_defects,
-           "hint": args.hint, "preview": not args.no_preview}
+           "hint": args.hint, "preview": not args.no_preview,
+           "region_desc": args.region_desc}
+    regions = load_regions(args.regions) if args.regions else None
+    if regions:
+        covered = sum(1 for g in goods if g.name in regions)
+        print(f"placement zones: {covered}/{len(goods)} good images covered")
+        if not covered:
+            raise SystemExit("--regions matches none of the good images (file names must match)")
     print(f"{len(exemplars)} exemplars, {len(goods)} good images, generating: "
           + ", ".join(f"{names[c]}({w:g})" for c, w in weights.items()))
 
     copy_test(args.annotated, js, coco, args.out)
     for split, n in (("train", args.train), ("valid", args.valid)):
         if n:
-            build_split(edit, cfg, split, n, goods, exemplars, weights, coco, names)
+            build_split(edit, cfg, split, n, goods, exemplars, weights, coco, names,
+                        regions=regions)
     if args.zip:
         zip_dataset(args.out)
 
