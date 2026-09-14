@@ -214,7 +214,7 @@ Every mask measured from the pixels that changed.</p>
         <span style="opacity:.7">(stays in this browser)</span>
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
            style="margin-left:auto" onclick="event.stopPropagation()">get one here ↗</a></label>
-      <input id="key" type="password" placeholder="AIza…" autocomplete="off">
+      <input id="key" type="password" placeholder="AIza… or AQ.…" autocomplete="off">
       <label class="remember"><input type="checkbox" id="remember">
         remember on this device</label>
     </div>
@@ -853,8 +853,8 @@ async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint){
 function explainApiError(m){
   const key = $("#key").value.trim();
   if(/API key not valid|API_KEY_INVALID/i.test(m)) return [
-    `Your API key isn't valid${key && !/^AIza/.test(key) ? " — it doesn't start with “AIza”, so the wrong text was copied" : ""}.`,
-    `On aistudio.google.com/apikey, click the copy icon next to the key (about 39 characters, starts with AIza) and paste it again.`];
+    `Your API key isn't valid${key && !/^(AIza|AQ\.)/.test(key) ? " — it doesn't look like a Google key (they start with “AIza” or “AQ.”), so the wrong text was probably copied" : ""}.`,
+    `On aistudio.google.com/apikey, click the copy icon next to the key and paste it again — then use “Test my key” below.`];
   if(/RESOURCE_EXHAUSTED|quota|429/i.test(m)) return [
     "You've hit the free-tier rate limit.",
     "Wait a minute and press the button again — or enable billing on the key for full batches."];
