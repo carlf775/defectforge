@@ -397,7 +397,7 @@ const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.ch
 const colorForLabel = l => l ? `oklch(0.75 0.28 ${((hashStr(l)*GOLDEN_ANGLE)%360).toFixed(1)})` : "white";
 
 const state = {cats:[], catId:new Map(), testImages:[], testAnns:[], exemplars:[], goods:[],
-               results:[], seq:0, job:0};
+               results:[], seq:0, job:0, lastApiError:null};
 let running = false, abort = false;
 
 /* ---------- tiny helpers ---------- */
@@ -721,6 +721,18 @@ function ready(){
 /* The guide box: one clear instruction at a time, anchored beside the thing to do.
    All explanatory copy lives HERE, not scattered through the layout. */
 const GUIDE_STEPS = [
+  [() => state.lastApiError === "CHECKING", "#key", () =>
+   `<b>Checking your key…</b>`],
+  [() => state.lastApiError === "KEY_OK", "#try", () =>
+   `<b>Your key works.</b>
+    <div class="how">Press the button again.
+    <a href="#" onclick="state.lastApiError=null;nextStep();return false">ok</a></div>`],
+  [() => !!state.lastApiError && !running, "#key", () => {
+    const [what, fix] = explainApiError(state.lastApiError);
+    return `<b>Something went wrong: ${what}</b>
+      <div class="how">${fix}</div>
+      <div class="how"><a href="#" onclick="checkKey();return false">Test my key</a> ·
+      <a href="#" onclick="state.lastApiError=null;nextStep();return false">dismiss</a></div>`; }],
   [() => !$("#key").value.trim(), "#key", () =>
    `<b>Paste your Gemini key.</b>
     <div class="how">Get one at <a href="https://aistudio.google.com/apikey" target="_blank"
@@ -778,7 +790,7 @@ $("#key").value = localStorage.getItem(KEY) || "";
 $("#remember").checked = !!localStorage.getItem(KEY);
 const saveKey = () => $("#remember").checked
   ? localStorage.setItem(KEY, $("#key").value) : localStorage.removeItem(KEY);
-$("#key").oninput = () => { saveKey(); ready(); };
+$("#key").oninput = () => { state.lastApiError = null; saveKey(); ready(); };
 $("#fAnnF").onchange = e => $("#fAnn").onchange(e);
 $("#fGoodF").onchange = e => $("#fGood").onchange(e);
 $("#remember").onchange = saveKey;
@@ -825,14 +837,51 @@ async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint){
       {inlineData:{mimeType:"image/jpeg", data:d2}}]}]})
   });
   const j = await r.json();
-  if(!r.ok) throw new Error(j.error?.message || `HTTP ${r.status}`);
+  if(!r.ok){ state.lastApiError = j.error?.message || `HTTP ${r.status}`;
+             throw new Error(state.lastApiError); }
   const part = (j.candidates?.[0]?.content?.parts || [])
     .find(p => (p.inlineData||p.inline_data)?.data);
-  if(!part) throw new Error(j.candidates?.[0]?.finishReason || "no image returned");
+  if(!part){ state.lastApiError = j.candidates?.[0]?.finishReason || "no image returned";
+             throw new Error(state.lastApiError); }
+  state.lastApiError = null;
   const raw = (part.inlineData||part.inline_data).data;
   const bytes = Uint8Array.from(atob(raw), c => c.charCodeAt(0));
   return await createImageBitmap(new Blob([bytes]));
 }
+
+/* plain-language diagnosis of whatever the API just said */
+function explainApiError(m){
+  const key = $("#key").value.trim();
+  if(/API key not valid|API_KEY_INVALID/i.test(m)) return [
+    `Your API key isn't valid${key && !/^AIza/.test(key) ? " — it doesn't start with “AIza”, so the wrong text was copied" : ""}.`,
+    `On aistudio.google.com/apikey, click the copy icon next to the key (about 39 characters, starts with AIza) and paste it again.`];
+  if(/RESOURCE_EXHAUSTED|quota|429/i.test(m)) return [
+    "You've hit the free-tier rate limit.",
+    "Wait a minute and press the button again — or enable billing on the key for full batches."];
+  if(/billing|PERMISSION_DENIED|403/i.test(m)) return [
+    "Your key isn't allowed to use this image model.",
+    "Enable billing on the key in Google AI Studio, or pick the other model in the dropdown."];
+  if(/not found|404/i.test(m)) return [
+    "This model isn't available for your key.",
+    "Pick the other model in the dropdown and try again."];
+  if(/Failed to fetch|NetworkError|TypeError/i.test(m)) return [
+    "Couldn't reach Google.",
+    "Check your internet connection, then press the button again."];
+  if(/SAFETY|blocked|PROHIBITED/i.test(m)) return [
+    "Google refused to edit that image.",
+    "Just run it again — a different image and defect example usually goes through."];
+  return ["The API said: " + m, "Fix that, or press the button again — a one-off glitch often passes on retry."];
+}
+window.checkKey = async () => {
+  state.lastApiError = "CHECKING";
+  try{
+    const r = await fetch("https://generativelanguage.googleapis.com/v1beta/models?pageSize=1",
+      {headers:{"x-goog-api-key": $("#key").value.trim()}});
+    const j = await r.json();
+    state.lastApiError = r.ok ? "KEY_OK" : (j.error?.message || `HTTP ${r.status}`);
+  }catch(e){ state.lastApiError = String(e.message || e); }
+  nextStep();
+};
 
 /* ---------- generation ---------- */
 async function generateOne(split, idx, weights, hint, tag){
