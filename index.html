@@ -720,32 +720,24 @@ function ready(){
    All explanatory copy lives HERE, not scattered through the layout. */
 const GUIDE_STEPS = [
   [() => !$("#key").value.trim(), "#key", () =>
-   `<b>Paste your Gemini API key.</b> It does the image editing and stays in this browser —
-    it goes straight to Google and nowhere else.
-    <div class="how">No key? <a href="https://aistudio.google.com/apikey" target="_blank"
-    rel="noopener">aistudio.google.com/apikey</a> → sign in → <b>Create API key</b> → copy it
-    here (30&nbsp;seconds, needs billing for image models). Recommended: restrict the key to this
-    site and the Generative Language API, then a leak is harmless. “Remember” keeps it in this
-    browser only.</div>`],
+   `<b>Paste your Gemini key.</b>
+    <div class="how">Get one at <a href="https://aistudio.google.com/apikey" target="_blank"
+    rel="noopener">aistudio.google.com/apikey</a> · it stays in this browser.</div>`],
   [() => !state.exemplars.length, "#dropAnn", () =>
-   `<b>Add photos that HAVE defects.</b> Real examples — the AI learns what your defect types
-    look like from these.
-    <div class="how">Choose a folder holding the images and their COCO annotation json.
-    No annotated photos yet? <a href="#" onclick="document.getElementById('fRaw').click();return false">
-    Draw the annotations here</a> — click around each defect, save, done.</div>`],
+   `<b>Add photos that HAVE defects.</b>
+    <div class="how">A folder with images + COCO json.
+    None yet? <a href="#" onclick="document.getElementById('fRaw').click();return false">Draw
+    them here</a>.</div>`],
   [() => !state.goods.length, "#dropGood", () =>
-   `<b>Add photos of your own items WITHOUT defects.</b> These become the backgrounds that
-    defects get painted onto.
-    <div class="how">Optional: include a COCO json of zone polygons (e.g. the weld seam)
-    drawn over these images — defects are then aimed at, and kept inside, those zones.</div>`],
+   `<b>Add photos WITHOUT defects.</b>
+    <div class="how">Defects get painted onto these. Optional: a zone json keeps them
+    inside your marked areas.</div>`],
   [() => { try { return !chosen().length } catch(e){ return true } }, "#classBox", () =>
-   `<b>Tick the defect types you want.</b> The numbers show how many real examples each
-    type has — more examples, better variety.`],
+   `<b>Tick the defect types you want.</b>`],
   [() => state.results && state.results.length && !running, "#cards", () =>
-   `<b>Judge the results.</b> Click an image to see it big — hold <b>space</b> to flip
-    against the original, and drop anything unconvincing.
-    <div class="how">Happy with them? Click <b>Generate batch</b> for the full dataset,
-    then <b>Download Roboflow zip</b>.</div>`],
+   `<b>Judge the results.</b>
+    <div class="how">Click = big view · hold space = before/after · drop the bad ones ·
+    then <b>Generate batch</b>.</div>`],
 ];
 let nextGlowEl = null, guideEl = null;
 function placeGuide(){
@@ -761,8 +753,8 @@ function nextStep(){
   const box = $("#guidebox");
   const step = GUIDE_STEPS.find(([need]) => need());
   const [, sel, html] = step || [null, "#try", () =>
-    `<b>Everything is set — click Preview&nbsp;3.</b> Three trial images, a handful of calls,
-     so you can judge the results before paying for a full batch.`];
+    `<b>Click Preview&nbsp;3.</b>
+     <div class="how">3 trial images before you pay for a full batch.</div>`];
   const rendered = html();
   if(box.__last !== rendered){
     box.__last = rendered;
