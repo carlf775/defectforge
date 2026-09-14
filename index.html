@@ -38,8 +38,10 @@ header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
   border-radius:13px;font-size:16.5px;line-height:1.65;
   box-shadow:0 14px 44px rgba(0,0,0,.5)}
 #guidebox b{color:var(--ok);font-size:18px}
-#guidebox::before{content:"👉";font-size:22px;position:absolute;right:-38px;top:50%;
-  transform:translateY(-50%)}
+#guidebox::before{content:"";position:absolute;right:-11px;top:50%;width:18px;height:18px;
+  transform:translateY(-50%) rotate(45deg);background:inherit;
+  border-top:3px solid var(--ok);border-right:3px solid var(--ok);
+  border-radius:3px}
 #guidebox .how{font-size:13px;color:var(--muted);margin-top:10px}
 #guidebox ol{margin:7px 0 0;padding-left:19px}
 #guidebox ol li{margin-bottom:4px}
