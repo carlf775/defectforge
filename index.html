@@ -32,11 +32,19 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
 .sub{color:var(--muted);margin:0 0 16px;max-width:64ch;font-size:14.5px}
-#nextbar{position:sticky;top:8px;z-index:50;margin:0 0 22px;padding:11px 15px;
-  background:color-mix(in srgb,var(--ok) 16%,var(--bg));
-  border:1px solid color-mix(in srgb,var(--ok) 50%,transparent);
-  border-radius:9px;font-size:14.5px;line-height:1.5}
-#nextbar b{color:var(--ok)}
+#guidebox{position:absolute;z-index:60;width:330px;padding:16px 18px;
+  background:color-mix(in srgb,var(--ok) 14%,var(--bg));
+  border:2px solid color-mix(in srgb,var(--ok) 65%,transparent);
+  border-radius:11px;font-size:14.5px;line-height:1.6;
+  box-shadow:0 10px 34px rgba(0,0,0,.35)}
+#guidebox b{color:var(--ok)}
+#guidebox .how{font-size:12.5px;color:var(--muted);margin-top:9px}
+#guidebox ol{margin:7px 0 0;padding-left:19px}
+#guidebox ol li{margin-bottom:4px}
+@media (max-width:1240px){
+  #guidebox{position:fixed !important;left:12px !important;right:12px;bottom:12px;
+    top:auto !important;width:auto}
+}
 .next-glow{outline:3px solid var(--ok);outline-offset:3px;border-radius:var(--radius);
   transition:outline-color .3s}
 .sub b{color:var(--ink);font-weight:600}
@@ -188,7 +196,7 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
 <p class="sub">Annotated defects + good images in, a Roboflow-ready synthetic dataset out.
 Every mask measured from the pixels that changed.</p>
 
-<div id="nextbar"><b>Next:</b> <span id="nextmsg"></span></div>
+<div id="guidebox"></div>
 
 <section>
   <h2><i>1</i>Gemini</h2>
@@ -199,20 +207,6 @@ Every mask measured from the pixels that changed.</p>
         <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener"
            style="margin-left:auto" onclick="event.stopPropagation()">get one here ↗</a></label>
       <input id="key" type="password" placeholder="AIza…" autocomplete="off">
-      <details class="mini">
-        <summary>How to get a key (30 seconds)</summary>
-        <ol>
-          <li>Open <a href="https://aistudio.google.com/apikey" target="_blank"
-            rel="noopener">aistudio.google.com/apikey</a> and sign in with your Google account.</li>
-          <li>Click <b>Create API key</b> and copy it here.</li>
-          <li>Recommended: click the key, add an <b>HTTP referrer restriction</b> for this
-            site's address, and allow only the <b>Generative Language API</b>. Then the key is
-            useless anywhere else if it ever leaks.</li>
-        </ol>
-        <p>Image generation needs a paid key — check the model is enabled for your plan.
-        The key goes from this tab straight to Google and nowhere else; unticked, it dies with
-        the tab, ticked, it sits in this browser's localStorage.</p>
-      </details>
       <label class="remember"><input type="checkbox" id="remember">
         remember on this device</label>
     </div>
@@ -230,28 +224,22 @@ Every mask measured from the pixels that changed.</p>
   <h2><i>2</i>Input</h2>
   <div class="grid g2">
     <div>
-      <label>Photos <b>with</b> defects — the AI learns what defects look like from these
-        <span style="opacity:.6">(images + COCO json; kept real → test split)</span></label>
+      <label>Photos <b>with</b> defects</label>
       <div class="drop" id="dropAnn"><b>Choose folder</b> ·
         <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
         or drop them here</div>
       <input type="file" id="fAnn" webkitdirectory directory multiple>
       <input type="file" id="fAnnF" accept="image/*,.json" multiple>
-      <div class="note" style="margin-top:7px">no annotations yet?
-        <a href="#" id="annotateHere">draw them here</a></div>
       <input type="file" id="fRaw" accept="image/*" multiple>
       <div id="annInfo" class="note"></div>
     </div>
     <div>
-      <label>Photos of your items <b>without</b> defects — defects get painted onto these
-        <span style="opacity:.6">(→ train/valid)</span></label>
+      <label>Photos of your items <b>without</b> defects</label>
       <div class="drop" id="dropGood"><b>Choose folder</b> ·
         <a href="#" id="pickGoodFiles" onclick="event.stopPropagation()">pick files</a> ·
         or drop them here</div>
       <input type="file" id="fGood" webkitdirectory directory multiple>
       <input type="file" id="fGoodF" accept="image/*,.json" multiple>
-      <div class="note" style="margin-top:7px">optional: include a COCO json of weld-zone
-        polygons over these images — defects are then aimed at and kept inside them</div>
       <div id="goodInfo" class="note"></div>
     </div>
   </div>
@@ -722,30 +710,68 @@ function ready(){
   nextStep();
 }
 
-/* one plain sentence saying what the tool needs next, pointing at where to do it */
-const NEXT_STEPS = [
-  [() => !$("#key").value.trim(), "#key",
-   "Paste your Gemini API key — it does the image editing. No key yet? Click “get one here”."],
-  [() => !state.exemplars.length, "#dropAnn",
-   "Add photos that HAVE defects, plus their annotation file — the AI learns what defects look like from these. No annotated photos? Click “draw them here”."],
-  [() => !state.goods.length, "#dropGood",
-   "Add photos of your own items WITHOUT defects — the defects get painted onto these."],
-  [() => { try { return !chosen().length } catch(e){ return true } }, "#classBox",
-   "Tick at least one defect type to generate."],
+/* The guide box: one clear instruction at a time, anchored beside the thing to do.
+   All explanatory copy lives HERE, not scattered through the layout. */
+const GUIDE_STEPS = [
+  [() => !$("#key").value.trim(), "#key", () =>
+   `<b>Paste your Gemini API key.</b> It does the image editing and stays in this browser —
+    it goes straight to Google and nowhere else.
+    <div class="how">No key? <a href="https://aistudio.google.com/apikey" target="_blank"
+    rel="noopener">aistudio.google.com/apikey</a> → sign in → <b>Create API key</b> → copy it
+    here (30&nbsp;seconds, needs billing for image models). Recommended: restrict the key to this
+    site and the Generative Language API, then a leak is harmless. “Remember” keeps it in this
+    browser only.</div>`],
+  [() => !state.exemplars.length, "#dropAnn", () =>
+   `<b>Add photos that HAVE defects.</b> Real examples — the AI learns what your defect types
+    look like from these.
+    <div class="how">Choose a folder holding the images and their COCO annotation json.
+    No annotated photos yet? <a href="#" onclick="document.getElementById('fRaw').click();return false">
+    Draw the annotations here</a> — click around each defect, save, done.</div>`],
+  [() => !state.goods.length, "#dropGood", () =>
+   `<b>Add photos of your own items WITHOUT defects.</b> These become the backgrounds that
+    defects get painted onto.
+    <div class="how">Optional: include a COCO json of zone polygons (e.g. the weld seam)
+    drawn over these images — defects are then aimed at, and kept inside, those zones.</div>`],
+  [() => { try { return !chosen().length } catch(e){ return true } }, "#classBox", () =>
+   `<b>Tick the defect types you want.</b> The numbers show how many real examples each
+    type has — more examples, better variety.`],
+  [() => state.results && state.results.length && !running, "#cards", () =>
+   `<b>Judge the results.</b> Click an image to see it big — hold <b>space</b> to flip
+    against the original, and drop anything unconvincing.
+    <div class="how">Happy with them? Click <b>Generate batch</b> for the full dataset,
+    then <b>Download Roboflow zip</b>.</div>`],
 ];
-let nextGlowEl = null;
+let nextGlowEl = null, guideEl = null;
+function placeGuide(){
+  const box = $("#guidebox");
+  if(!guideEl || innerWidth <= 1240){ return; }
+  const sec = guideEl.closest("section") || guideEl;
+  const sr = sec.getBoundingClientRect(), r = guideEl.getBoundingClientRect();
+  box.style.left = Math.max(10, scrollX + sr.left - box.offsetWidth - 26) + "px";
+  box.style.top  = Math.max(scrollY + 8,
+    scrollY + r.top + r.height/2 - box.offsetHeight/2) + "px";
+}
 function nextStep(){
-  const step = NEXT_STEPS.find(([need]) => need());
-  const [, sel, msg] = step || [null, "#try",
-    "Everything is set. Click Preview 3 — three trial images, so you can judge the results before paying for a full batch."];
-  $("#nextmsg").textContent = msg;
+  const box = $("#guidebox");
+  const step = GUIDE_STEPS.find(([need]) => need());
+  const [, sel, html] = step || [null, "#try", () =>
+    `<b>Everything is set — click Preview&nbsp;3.</b> Three trial images, a handful of calls,
+     so you can judge the results before paying for a full batch.`];
+  const rendered = html();
+  if(box.__last !== rendered){
+    box.__last = rendered;
+    box.innerHTML = rendered;
+  }
   const el = $(sel);
   if(nextGlowEl !== el){
     nextGlowEl?.classList.remove("next-glow");
     el.classList.add("next-glow");
-    nextGlowEl = el;
+    nextGlowEl = el; guideEl = el;
   }
+  placeGuide();
 }
+addEventListener("scroll", placeGuide, {passive:true});
+addEventListener("resize", placeGuide);
 ["#key","#ntrain","#nvalid","#mind","#maxd"].forEach(s => $(s).oninput = ready);
 const KEY = "df_key";
 $("#key").value = localStorage.getItem(KEY) || "";
@@ -1031,7 +1057,7 @@ $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 /* ---------- built-in annotator ---------- */
 const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1,
               cur:[], mouse:null};
-$("#annotateHere").onclick = e => { e.preventDefault(); $("#fRaw").click(); };
+// "draw them here" now lives in the guide box, which triggers #fRaw directly
 $("#fRaw").onchange = e => {
   const r = fileReport(e.target.files);
   anno.imgs = r.imgs;
@@ -1364,6 +1390,7 @@ $("#guide").onclick = () => openTour(true);
 if(!localStorage.getItem("df_tour")) setTimeout(() => openTour(false), 400);
 
 ready();
+setInterval(nextStep, 1200);   // guide box also follows changes ready() doesn't see
 </script>
 </body>
 </html>
