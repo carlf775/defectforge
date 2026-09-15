@@ -32,24 +32,25 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
 .sub{color:var(--muted);margin:0 0 16px;max-width:64ch;font-size:14.5px}
-#guidebox{position:absolute;z-index:60;width:400px;padding:20px 22px;
+#guidebox{position:fixed;z-index:60;width:300px;padding:16px 18px;
   background:color-mix(in srgb,var(--ok) 20%,var(--bg));
-  border:3px solid var(--ok);
-  border-radius:13px;font-size:16.5px;line-height:1.65;
+  border:3px solid var(--ok);border-radius:13px;font-size:15px;line-height:1.55;
   box-shadow:0 14px 44px rgba(0,0,0,.5)}
-#guidebox b{color:var(--ok);font-size:18px}
-#guidebox::before{content:"";position:absolute;right:-11px;top:50%;width:18px;height:18px;
-  transform:translateY(-50%) rotate(45deg);background:inherit;
-  border-top:3px solid var(--ok);border-right:3px solid var(--ok);
-  border-radius:3px}
-#guidebox .how{font-size:13px;color:var(--muted);margin-top:10px}
+#guidebox b{color:var(--ok);font-size:16px}
+#guidebox .how{font-size:12.5px;color:var(--muted);margin-top:8px}
 #guidebox ol{margin:7px 0 0;padding-left:19px}
 #guidebox ol li{margin-bottom:4px}
-@media (max-width:1240px){
-  #guidebox{position:fixed !important;left:12px !important;right:12px;bottom:12px;
-    top:auto !important;width:auto}
-  #guidebox::before{content:none}
-}
+#guidebox::before{content:"";position:absolute;top:50%;width:16px;height:16px;
+  transform:translateY(-50%) rotate(45deg);background:inherit}
+#guidebox.float.left::before{right:-10px;
+  border-top:3px solid var(--ok);border-right:3px solid var(--ok);border-radius:3px}
+#guidebox.float.right::before{left:-10px;
+  border-bottom:3px solid var(--ok);border-left:3px solid var(--ok);border-radius:3px}
+/* docked bar: pushes the page down (body padding), so it never covers anything */
+#guidebox.dock-top{width:auto;left:0;right:0;top:0;border-radius:0;
+  border-width:0 0 3px 0;padding:12px 20px;max-width:none}
+#guidebox.dock-top::before{content:none}
+body{transition:padding-top .18s ease}
 .next-glow{outline:4px solid var(--ok);outline-offset:4px;border-radius:var(--radius);
   animation:glowpulse 1.6s ease-in-out infinite}
 @keyframes glowpulse{
@@ -733,6 +734,10 @@ const GUIDE_STEPS = [
       <div class="how">${fix}</div>
       <div class="how"><a href="#" onclick="checkKey();return false">Test my key</a> ·
       <a href="#" onclick="state.lastApiError=null;nextStep();return false">dismiss</a></div>`; }],
+  [() => running, "#stop", () =>
+   `<b>Generating…</b>
+    <div class="how">Images appear below as each one finishes.
+    <a href="#" onclick="document.getElementById('stop').click();return false">Stop</a></div>`],
   [() => !$("#key").value.trim(), "#key", () =>
    `<b>Paste your Gemini key.</b>
     <div class="how">Get one at <a href="https://aistudio.google.com/apikey" target="_blank"
@@ -757,13 +762,26 @@ const GUIDE_STEPS = [
 ];
 let nextGlowEl = null, guideEl = null;
 function placeGuide(){
-  const box = $("#guidebox");
-  if(!guideEl || innerWidth <= 1240){ return; }
-  const sec = guideEl.closest("section") || guideEl;
-  const sr = sec.getBoundingClientRect(), r = guideEl.getBoundingClientRect();
-  box.style.left = Math.max(10, scrollX + sr.left - box.offsetWidth - 26) + "px";
-  box.style.top  = Math.max(scrollY + 8,
-    scrollY + r.top + r.height/2 - box.offsetHeight/2) + "px";
+  const box = $("#guidebox"), wrap = document.querySelector(".wrap");
+  if(!guideEl || !wrap) return;
+  const wr = wrap.getBoundingClientRect(), gap = 16;
+  const leftRoom = wr.left, rightRoom = innerWidth - wr.right;
+  // float in a side margin only if the box fits there fully clear of the form
+  if(Math.max(leftRoom, rightRoom) >= 300 + gap + 10){
+    document.body.style.paddingTop = "";
+    const right = rightRoom >= leftRoom;
+    box.className = "float " + (right ? "right" : "left");
+    const r = guideEl.getBoundingClientRect(), bh = box.offsetHeight;
+    box.style.top = Math.max(8,
+      Math.min(r.top + r.height/2 - bh/2, innerHeight - bh - 8)) + "px";
+    box.style.left = (right ? wr.right + gap : wr.left - box.offsetWidth - gap) + "px";
+    box.style.right = ""; box.style.bottom = "";
+  } else {
+    // no room beside the form: dock a bar at the top and push the page down
+    box.className = "dock-top";
+    box.style.left = box.style.right = box.style.top = "";
+    document.body.style.paddingTop = box.offsetHeight + "px";
+  }
 }
 function nextStep(){
   const box = $("#guidebox");
