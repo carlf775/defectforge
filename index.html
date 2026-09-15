@@ -1448,6 +1448,38 @@ if(!localStorage.getItem("df_tour")) setTimeout(() => openTour(false), 400);
 
 ready();
 setInterval(nextStep, 1200);   // guide box also follows changes ready() doesn't see
+
+/* ?autoload — on a local checkout (python -m http.server), pull the repo's own
+   folders straight into the inputs: /data/images -> defects, /parts/all -> goods.
+   Silently does nothing where those folders aren't served (e.g. GitHub Pages). */
+if(new URLSearchParams(location.search).has("autoload")) (async () => {
+  const load = async (path, sel, maxImgs) => {
+    const html = await (await fetch(path)).text();
+    let names = [...html.matchAll(/href="([^"]+)"/g)].map(m => decodeURIComponent(m[1]))
+      .filter(n => !n.endsWith("/"));
+    const jsons = names.filter(n => n.endsWith(".json"));
+    let imgs = names.filter(n => IMG_RE.test(n));
+    if(maxImgs) imgs = imgs.slice(0, maxImgs);
+    const dt = new DataTransfer();
+    const want = [...jsons, ...imgs];
+    for(let i = 0; i < want.length; i += 20){
+      (await Promise.all(want.slice(i, i+20).map(async n => {
+        const b = await (await fetch(path + encodeURIComponent(n))).blob();
+        return new File([b], n, {type: b.type});
+      }))).forEach(f => dt.items.add(f));
+    }
+    const inp = $(sel); inp.files = dt.files;
+    inp.dispatchEvent(new Event("change"));
+  };
+  try{ await load("/parts/all/", "#fGood"); }catch(e){}
+  try{ await load("/data/images/", "#fAnn", 150); }catch(e){}
+  setTimeout(() => {   // weld_seam rides along in the SWRD json but is not a defect
+    const cb = [...document.querySelectorAll("#chips input")]
+      .find(i => i.closest("label,.chip")?.textContent.includes("weld_seam"));
+    if(cb && cb.checked){ cb.checked = false; cb.dispatchEvent(new Event("change")); }
+    ready();
+  }, 1200);
+})();
 </script>
 </body>
 </html>
