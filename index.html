@@ -32,25 +32,20 @@ header{display:flex;align-items:center;gap:12px;margin-bottom:6px}
 header img.mark{width:26px;height:26px;flex:0 0 auto;image-rendering:pixelated}
 header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
 .sub{color:var(--muted);margin:0 0 16px;max-width:64ch;font-size:14.5px}
-#guidebox{position:fixed;z-index:60;width:300px;padding:16px 18px;
+#guidebox{position:fixed;z-index:60;width:300px;padding:0.95em 1.1em;
   background:color-mix(in srgb,var(--ok) 20%,var(--bg));
-  border:3px solid var(--ok);border-radius:13px;font-size:15px;line-height:1.55;
+  border:3px solid var(--ok);border-radius:13px;font-size:15px;line-height:1.5;
   box-shadow:0 14px 44px rgba(0,0,0,.5)}
-#guidebox b{color:var(--ok);font-size:16px}
-#guidebox .how{font-size:12.5px;color:var(--muted);margin-top:8px}
-#guidebox ol{margin:7px 0 0;padding-left:19px}
-#guidebox ol li{margin-bottom:4px}
+#guidebox b{color:var(--ok);font-size:1.08em}
+#guidebox .how{font-size:.84em;color:var(--muted);margin-top:.55em}
+#guidebox ol{margin:.5em 0 0;padding-left:1.3em}
+#guidebox ol li{margin-bottom:.25em}
 #guidebox::before{content:"";position:absolute;top:50%;width:16px;height:16px;
   transform:translateY(-50%) rotate(45deg);background:inherit}
 #guidebox.float.left::before{right:-10px;
   border-top:3px solid var(--ok);border-right:3px solid var(--ok);border-radius:3px}
 #guidebox.float.right::before{left:-10px;
   border-bottom:3px solid var(--ok);border-left:3px solid var(--ok);border-radius:3px}
-/* docked bar: pushes the page down (body padding), so it never covers anything */
-#guidebox.dock-top{width:auto;left:0;right:0;top:0;border-radius:0;
-  border-width:0 0 3px 0;padding:12px 20px;max-width:none}
-#guidebox.dock-top::before{content:none}
-body{transition:padding-top .18s ease}
 .next-glow{outline:4px solid var(--ok);outline-offset:4px;border-radius:var(--radius);
   animation:glowpulse 1.6s ease-in-out infinite}
 @keyframes glowpulse{
@@ -764,24 +759,21 @@ let nextGlowEl = null, guideEl = null;
 function placeGuide(){
   const box = $("#guidebox"), wrap = document.querySelector(".wrap");
   if(!guideEl || !wrap) return;
-  const wr = wrap.getBoundingClientRect(), gap = 16;
+  const wr = wrap.getBoundingClientRect(), gap = 14;
   const leftRoom = wr.left, rightRoom = innerWidth - wr.right;
-  // float in a side margin only if the box fits there fully clear of the form
-  if(Math.max(leftRoom, rightRoom) >= 300 + gap + 10){
-    document.body.style.paddingTop = "";
-    const right = rightRoom >= leftRoom;
-    box.className = "float " + (right ? "right" : "left");
-    const r = guideEl.getBoundingClientRect(), bh = box.offsetHeight;
-    box.style.top = Math.max(8,
-      Math.min(r.top + r.height/2 - bh/2, innerHeight - bh - 8)) + "px";
-    box.style.left = (right ? wr.right + gap : wr.left - box.offsetWidth - gap) + "px";
-    box.style.right = ""; box.style.bottom = "";
-  } else {
-    // no room beside the form: dock a bar at the top and push the page down
-    box.className = "dock-top";
-    box.style.left = box.style.right = box.style.top = "";
-    document.body.style.paddingTop = box.offsetHeight + "px";
-  }
+  const right = rightRoom >= leftRoom;                    // float in the roomier margin
+  const room = right ? rightRoom : leftRoom;
+  // scale card width to the margin, within sensible bounds; font scales gently with it
+  const w = Math.max(190, Math.min(340, Math.round(room - gap * 2)));
+  box.className = "float " + (right ? "right" : "left");
+  box.style.width = w + "px";
+  box.style.fontSize = (13.5 + (w - 190) / 150 * 2).toFixed(1) + "px";  // 13.5–15.5px
+  const r = guideEl.getBoundingClientRect(), bh = box.offsetHeight;
+  box.style.top = Math.max(8,
+    Math.min(r.top + r.height / 2 - bh / 2, innerHeight - bh - 8)) + "px";
+  box.style.left = (right ? wr.right + gap
+                          : Math.max(gap, wr.left - w - gap)) + "px";
+  box.style.right = ""; box.style.bottom = "";
 }
 function nextStep(){
   const box = $("#guidebox");
