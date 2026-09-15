@@ -103,6 +103,20 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .inzone.clean .drop{border-color:color-mix(in srgb,var(--ok) 34%,transparent)}
 .inzone.clean .drop:hover{border-color:var(--ok)}
 .inzone .sub{font-size:12px;color:var(--muted);margin:0 0 10px}
+.preload{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
+.pill{background:color-mix(in srgb,var(--bad) 18%,transparent);
+  border:1px solid color-mix(in srgb,var(--bad) 40%,transparent);
+  color:var(--ink);border-radius:999px;padding:5px 13px;font:600 12.5px var(--display);
+  cursor:pointer;transition:.15s}
+.pill:hover{background:color-mix(in srgb,var(--bad) 30%,transparent)}
+.pill:disabled{opacity:.6;cursor:default}
+#exmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.82);
+  display:grid;place-items:center;padding:24px;cursor:zoom-out}
+#exmodal .exwrap{display:flex;flex-direction:column;gap:8px;align-items:center;max-width:95vw}
+#exmodal canvas{max-width:95vw;max-height:84vh;border-radius:8px;
+  box-shadow:0 20px 60px rgba(0,0,0,.6);background:#000}
+#exmodal .cap{color:#fff;font:600 14px var(--display)}
+.thumbs figure{cursor:zoom-in}
 input[type=file]{display:none}
 .chips{display:flex;flex-wrap:wrap;gap:8px;margin-top:11px}
 .chip{display:flex;align-items:center;gap:8px;background:rgba(255,255,255,.06);
@@ -220,8 +234,9 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
   <h1>DefectForge</h1>
   <button id="guide" class="ghost">Guided tour</button>
 </header>
-<p class="sub">Annotated defects + good images in, a Roboflow-ready synthetic dataset out.
-Every mask measured from the pixels that changed.</p>
+<p class="sub">Have clean photos of your parts but no examples of defects? This paints realistic
+defects onto your parts using real ones as a guide, and gives you a fully labelled dataset to
+train a detector. Every label is measured from exactly what changed — never guessed.</p>
 
 <div id="guidebox"></div>
 
@@ -251,6 +266,11 @@ Every mask measured from the pixels that changed.</p>
     <div class="inzone def">
       <span class="tag">◆ Defect library</span>
       <p class="sub">Real annotated defects — the AI copies their look. Kept as the test split.</p>
+      <div class="preload">
+        <span class="note">Use a stored library:</span>
+        <button type="button" class="pill" data-dir="datasets/swrd">SWRD weld defects</button>
+        <span id="preState" class="note"></span>
+      </div>
       <div class="drop" id="dropAnn"><b>Choose folder</b> ·
         <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
         or drop them here</div>
@@ -324,7 +344,7 @@ Every mask measured from the pixels that changed.</p>
     <button id="try" disabled>Preview 3</button>
     <button class="primary" id="go" disabled>Generate batch</button>
     <button id="stop" disabled>Stop</button>
-    <button id="zip" disabled>Download Roboflow zip</button>
+    <button id="zip" disabled>Ship to training</button>
     <a href="#" id="st" class="note" style="border:0">self-test</a>
     <span class="note stat" id="counter"></span>
   </div>
@@ -351,6 +371,14 @@ Every mask measured from the pixels that changed.</p>
   <div class="hint">pick a class, then click around the defect to place points — click the first
     point again (or double-click / Enter) to close the mask · esc cancels the shape ·
     <b>z</b> undo · ←/→ change image</div>
+</div>
+
+<div id="exmodal" hidden>
+  <div class="exwrap">
+    <canvas id="exCanvas"></canvas>
+    <div id="exCap" class="cap"></div>
+    <div class="cap" style="opacity:.6;font-weight:400">click anywhere to close</div>
+  </div>
 </div>
 
 <div id="light">
@@ -723,11 +751,26 @@ function renderClasses(counts){
   state.exemplars.filter((_,i)=>i%step===0).slice(0,16).forEach(async ex => {
     const fig = document.createElement("figure");
     fig.innerHTML = `<img><figcaption>${ex.name}</figcaption>`;
+    fig.title = "click to view large";
+    fig.onclick = () => openExemplar(ex);
     th.appendChild(fig);
     fig.querySelector("img").src = (await cropCanvas(ex)).toDataURL("image/jpeg",0.8);
   });
   $("#classBox").hidden = false;
 }
+async function openExemplar(ex){
+  const bmp = await createImageBitmap(ex.file);
+  const c = $("#exCanvas"); c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext("2d"); g.drawImage(bmp, 0, 0); bmp.close();
+  const [x,y,w,h] = ex.bbox;
+  g.lineWidth = Math.max(2, Math.round(Math.max(c.width, c.height) / 320));
+  g.strokeStyle = colorForLabel(ex.name);
+  g.strokeRect(x, y, w, h);
+  $("#exCap").textContent = `${ex.name} · defect ${w}×${h}px`;
+  $("#exmodal").hidden = false;
+}
+$("#exmodal").onclick = () => $("#exmodal").hidden = true;
+addEventListener("keydown", e => { if(e.key === "Escape") $("#exmodal").hidden = true; });
 const chosen = () => [...document.querySelectorAll("#chips input:checked")].map(i=>i.value);
 
 function applyDisclosure(){
@@ -842,6 +885,63 @@ const saveKey = () => $("#remember").checked
 $("#key").oninput = () => { state.lastApiError = null; saveKey(); ready(); };
 $("#fAnnF").onchange = e => $("#fAnn").onchange(e);
 $("#fGoodF").onchange = e => $("#fGood").onchange(e);
+
+/* ---------- preloaded, stored libraries ----------
+   A bundled dataset folder holds a manifest.json listing its files; we fetch
+   them same-origin and keep them in the Cache Storage API so the next use is
+   instant and works offline. */
+const PRELOAD_CACHE = "df-preloaded-v1";
+async function fetchCached(url){
+  let cache = null;
+  try { cache = await caches.open(PRELOAD_CACHE); } catch(_){}
+  if(cache){
+    const hit = await cache.match(url);
+    if(hit) return hit.blob();
+  }
+  const res = await fetch(url);
+  if(!res.ok) throw new Error(`${url} → HTTP ${res.status}`);
+  const buf = await res.arrayBuffer();
+  if(cache){ try { await cache.put(url, new Response(buf)); } catch(_){} }
+  return new Blob([buf]);
+}
+async function loadPreloaded(dir, statusEl, btn){
+  const base = dir.replace(/\/$/, "") + "/";
+  statusEl.textContent = "loading…";
+  if(btn) btn.disabled = true;
+  try{
+    const manifest = JSON.parse(await (await fetchCached(base + "manifest.json")).text());
+    const dt = new DataTransfer();
+    const jsonBlob = await fetchCached(base + manifest.annotations);
+    dt.items.add(new File([jsonBlob], manifest.annotations, {type:"application/json"}));
+    let done = 0;
+    for(const name of manifest.images){
+      const blob = await fetchCached(base + name);
+      dt.items.add(new File([blob], name, {type: blob.type || "image/jpeg"}));
+      statusEl.textContent = `loading… ${++done}/${manifest.images.length}`;
+    }
+    $("#fAnn").files = dt.files;
+    $("#fAnn").dispatchEvent(new Event("change"));
+    let stored = false;
+    try { stored = !!(await caches.open(PRELOAD_CACHE)).match; } catch(_){}
+    statusEl.textContent = stored ? "stored on this device ✓" : "loaded";
+  }catch(e){
+    statusEl.textContent = "couldn't load: " + e.message;
+  }finally{
+    if(btn) btn.disabled = false;
+  }
+}
+document.querySelectorAll(".pill[data-dir]").forEach(btn => {
+  btn.onclick = () => loadPreloaded(btn.dataset.dir, $("#preState"), btn);
+});
+// show "stored ✓" up front if it's already cached from a previous visit
+(async () => {
+  try{
+    const cache = await caches.open(PRELOAD_CACHE);
+    const btn = document.querySelector(".pill[data-dir]");
+    if(btn && await cache.match(btn.dataset.dir.replace(/\/$/,"") + "/manifest.json"))
+      $("#preState").textContent = "stored on this device ✓";
+  }catch(_){}
+})();
 $("#remember").onchange = saveKey;
 $("#model").value = localStorage.getItem("df_model") || "gemini-2.5-flash-image";
 $("#model").onchange = () => localStorage.setItem("df_model", $("#model").value);
@@ -1392,7 +1492,7 @@ addEventListener("keyup", e => { if(e.key === " " && light.classList.contains("o
 /* ---------- guided tour ---------- */
 const TOUR = [
  {t:"Welcome to DefectForge",
-  b:"You give it two folders. It gives you back a full dataset, ready for Roboflow. This tour "+
+  b:"You give it two folders. It gives you back a full dataset, ready to train a model. This tour "+
     "takes about a minute. Two of its steps decide how good your labels will be, so stick with it."},
  {sel:"#key", t:"Your Gemini key",
   b:"Paste a key from Google AI Studio. It goes from this tab straight to Google. Nothing else "+
@@ -1429,9 +1529,10 @@ const TOUR = [
   b:"Do not skip this part. Look at each card. Does the box sit on a real-looking defect? "+
     "Click <b>drop</b> on anything that looks wrong. Dropped images never reach the zip. A "+
     "small clean set beats a big messy one."},
- {sel:"#zip", t:"Ship it to Roboflow",
-  b:"The zip holds <b>train</b>, <b>valid</b> and <b>test</b> folders. Each has its own COCO "+
-    "file. Drag the zip into Roboflow and the splits stay as they are."},
+ {sel:"#zip", t:"Ship it to training",
+  b:"The zip holds <b>train</b>, <b>valid</b> and <b>test</b> folders, each with its own COCO "+
+    "file — the standard layout, ready to train a model (or drop straight into Roboflow; the "+
+    "splits stay as they are)."},
 ];
 let step = 0, mandatory = false;
 const mask = document.createElement("div"); mask.id = "mask";
