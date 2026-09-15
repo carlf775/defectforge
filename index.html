@@ -740,6 +740,12 @@ $("#fAnn").onchange = async e => {
   const byPath = new Map(files.map(f => [f.webkitRelativePath || f.name, f]));
   const jsons = files.filter(f => f.name.endsWith(".json"));
   if(!jsons.length){
+    const rawImgs = files.filter(f => IMG_RE.test(f.name));
+    if(rawImgs.length){              // un-annotated images → open the drawing tool right away
+      $("#annInfo").textContent = `${rawImgs.length} image(s), no annotations yet — opening the drawing tool…`;
+      openAnnotator(rawImgs);
+      return;
+    }
     $("#annInfo").textContent = fileReport(files).text +
       " — no COCO .json in the selection; add one, or use \u201cdraw them here\u201d below";
     return;
@@ -1407,13 +1413,13 @@ const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, s
               cur:[], mouse:null};
 // "draw them here" opens the built-in annotator on a folder of raw images
 $("#annotateHere").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#fRaw").click(); };
-$("#fRaw").onchange = e => {
-  const r = fileReport(e.target.files);
-  anno.imgs = r.imgs;
-  if(!anno.imgs.length){ $("#annInfo").textContent = r.text + " — nothing to annotate"; return; }
+function openAnnotator(imgs){
+  if(!imgs.length){ $("#annInfo").textContent = "nothing to annotate — pick some images first"; return; }
+  anno.imgs = imgs;
   anno.idx = 0; anno.boxes = new Map(); anno.cur = []; anno.mouse = null;
   $("#anno").classList.add("on"); annoShow(0);
-};
+}
+$("#fRaw").onchange = e => openAnnotator(fileReport(e.target.files).imgs);
 async function annoShow(i){
   anno.idx = Math.max(0, Math.min(anno.imgs.length-1, i));
   if(anno.bmp) anno.bmp.close();
