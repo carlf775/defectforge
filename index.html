@@ -103,14 +103,45 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .inzone.clean .drop{border-color:color-mix(in srgb,var(--ok) 34%,transparent)}
 .inzone.clean .drop:hover{border-color:var(--ok)}
 .inzone .sub{font-size:12px;color:var(--muted);margin:0 0 10px}
-.preload{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:0 0 10px}
-.pill{background:color-mix(in srgb,var(--bad) 18%,transparent);
-  border:1px solid color-mix(in srgb,var(--bad) 40%,transparent);
-  color:var(--ink);border-radius:999px;padding:5px 13px;font:600 12.5px var(--display);
-  cursor:pointer;transition:.15s}
-.pill:hover{background:color-mix(in srgb,var(--bad) 30%,transparent)}
-.pill:disabled{opacity:.6;cursor:default}
-#exmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.82);
+.opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+@media (max-width:560px){.opts{grid-template-columns:1fr}}
+.opt{display:flex;flex-direction:column;gap:3px;text-align:left;align-items:stretch;
+  border:1px solid color-mix(in srgb,var(--bad) 30%,transparent);border-radius:9px;
+  padding:13px 15px;background:rgba(255,255,255,.03);cursor:pointer;transition:.15s;
+  font:inherit;color:var(--muted)}
+.opt:hover{border-color:var(--bad);background:var(--input)}
+.opt b{color:var(--ink);font:600 14px var(--display)}
+.opt span{font-size:12px}
+.opt.drop{border-style:dashed;text-align:left}
+.opt a{color:color-mix(in srgb,var(--bad) 85%,var(--ink))}
+#libmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);
+  display:grid;place-items:center;padding:24px}
+#libmodal[hidden]{display:none}
+.libpanel{background:var(--popover);border:1px solid var(--line);border-radius:14px;
+  width:min(720px,94vw);max-height:88vh;overflow:auto;box-shadow:0 24px 70px rgba(0,0,0,.6)}
+.libhead{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--line);position:sticky;top:0;
+  background:var(--popover)}
+.libhead b{font:700 16px var(--display)}
+#libClose{background:none;border:0;color:var(--muted);font-size:18px;cursor:pointer;padding:4px}
+#libClose:hover{color:var(--ink)}
+#libList{padding:16px 20px;display:flex;flex-direction:column;gap:16px}
+.libcard{border:1px solid var(--line);border-radius:11px;padding:15px 16px;
+  background:rgba(255,255,255,.02)}
+.libcard .lt{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.libcard h3{font:700 15px var(--display);margin:0}
+.libcard .desc{color:var(--muted);font-size:12.5px;margin:3px 0 10px}
+.libcard .cls{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+.libcard .cls span{font-size:11.5px;color:var(--muted);background:rgba(255,255,255,.06);
+  padding:2px 8px;border-radius:999px}
+.libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:7px;margin-bottom:13px}
+.libgrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#111;cursor:zoom-in}
+.libcard .act{display:flex;align-items:center;gap:12px}
+.libuse{background:var(--ok);color:var(--accent-ink);border:0;border-radius:8px;
+  padding:8px 16px;font:600 13px var(--display);cursor:pointer}
+.libuse:hover{filter:brightness(1.08)}
+.libuse:disabled{opacity:.6;cursor:default}
+#exmodal{position:fixed;inset:0;z-index:210;background:rgba(0,0,0,.82);
   display:grid;place-items:center;padding:24px;cursor:zoom-out}
 #exmodal[hidden]{display:none}
 #exmodal .exwrap{display:flex;flex-direction:column;gap:8px;align-items:center;max-width:95vw}
@@ -267,14 +298,18 @@ train a detector. Every label is measured from exactly what changed — never gu
     <div class="inzone def">
       <span class="tag">◆ Defect library</span>
       <p class="sub">Real annotated defects — the AI copies their look. Kept as the test split.</p>
-      <div class="preload">
-        <span class="note">Use a stored library:</span>
-        <button type="button" class="pill" data-dir="datasets/swrd">SWRD weld defects</button>
-        <span id="preState" class="note"></span>
+      <div class="opts">
+        <button type="button" class="opt" id="browseLib">
+          <b>Choose a stored library</b>
+          <span>Ready-made defect sets — preview and pick <span id="preState" class="note"></span></span>
+        </button>
+        <div class="opt drop" id="dropAnn">
+          <b>Upload your own</b>
+          <span>A folder with images + COCO json ·
+            <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
+            or drop here</span>
+        </div>
       </div>
-      <div class="drop" id="dropAnn"><b>Choose folder</b> ·
-        <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
-        or drop them here</div>
       <input type="file" id="fAnn" webkitdirectory directory multiple>
       <input type="file" id="fAnnF" accept="image/*,.json" multiple>
       <input type="file" id="fRaw" accept="image/*" multiple>
@@ -379,6 +414,16 @@ train a detector. Every label is measured from exactly what changed — never gu
     <canvas id="exCanvas"></canvas>
     <div id="exCap" class="cap"></div>
     <div class="cap" style="opacity:.6;font-weight:400">click anywhere to close</div>
+  </div>
+</div>
+
+<div id="libmodal" hidden>
+  <div class="libpanel">
+    <div class="libhead">
+      <b>Stored defect libraries</b>
+      <button type="button" id="libClose" aria-label="close">✕</button>
+    </div>
+    <div id="libList"><div class="note">Loading…</div></div>
   </div>
 </div>
 
@@ -770,8 +815,18 @@ async function openExemplar(ex){
   $("#exCap").textContent = `${ex.name} · defect ${w}×${h}px`;
   $("#exmodal").hidden = false;
 }
+function showBig(src, cap){
+  const im = new Image();
+  im.onload = () => {
+    const c = $("#exCanvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    c.getContext("2d").drawImage(im, 0, 0);
+    $("#exCap").textContent = cap; $("#exmodal").hidden = false;
+  };
+  im.src = src;
+}
 $("#exmodal").onclick = () => $("#exmodal").hidden = true;
-addEventListener("keydown", e => { if(e.key === "Escape") $("#exmodal").hidden = true; });
+addEventListener("keydown", e => { if(e.key === "Escape"){
+  $("#exmodal").hidden = true; $("#libmodal").hidden = true; } });
 const chosen = () => [...document.querySelectorAll("#chips input:checked")].map(i=>i.value);
 
 function applyDisclosure(){
@@ -905,9 +960,9 @@ async function fetchCached(url){
   if(cache){ try { await cache.put(url, new Response(buf)); } catch(_){} }
   return new Blob([buf]);
 }
-async function loadPreloaded(dir, statusEl, btn){
+async function loadPreloaded(dir, statusEl, btn, storedEl){
   const base = dir.replace(/\/$/, "") + "/";
-  statusEl.textContent = "loading…";
+  if(statusEl) statusEl.textContent = "loading…";
   if(btn) btn.disabled = true;
   try{
     const manifest = JSON.parse(await (await fetchCached(base + "manifest.json")).text());
@@ -918,31 +973,73 @@ async function loadPreloaded(dir, statusEl, btn){
     for(const name of manifest.images){
       const blob = await fetchCached(base + name);
       dt.items.add(new File([blob], name, {type: blob.type || "image/jpeg"}));
-      statusEl.textContent = `loading… ${++done}/${manifest.images.length}`;
+      if(statusEl) statusEl.textContent = `loading… ${++done}/${manifest.images.length}`;
     }
     $("#fAnn").files = dt.files;
     $("#fAnn").dispatchEvent(new Event("change"));
-    let stored = false;
-    try { stored = !!(await caches.open(PRELOAD_CACHE)).match; } catch(_){}
-    statusEl.textContent = stored ? "stored on this device ✓" : "loaded";
+    if(statusEl) statusEl.textContent = "· loaded, stored ✓";
+    if(storedEl) storedEl.textContent = "stored on this device ✓";
   }catch(e){
-    statusEl.textContent = "couldn't load: " + e.message;
+    if(statusEl) statusEl.textContent = "couldn't load: " + e.message;
+    throw e;
   }finally{
     if(btn) btn.disabled = false;
   }
 }
-document.querySelectorAll(".pill[data-dir]").forEach(btn => {
-  btn.onclick = () => loadPreloaded(btn.dataset.dir, $("#preState"), btn);
-});
-// show "stored ✓" up front if it's already cached from a previous visit
-(async () => {
+// registry of bundled libraries (each is a folder with a manifest.json)
+const PRELOADED = [{ dir: "datasets/swrd" }];
+async function isStored(dir){
+  try{ return !!(await (await caches.open(PRELOAD_CACHE))
+        .match(dir.replace(/\/$/,"") + "/manifest.json")); }catch(_){ return false; }
+}
+async function buildLibCard(ds){
+  const base = ds.dir.replace(/\/$/,"") + "/";
+  const man = JSON.parse(await (await fetchCached(base + "manifest.json")).text());
+  const card = document.createElement("div"); card.className = "libcard";
+  const cls = Object.entries(man.classes || {})
+    .filter(([n]) => !/weld_?seam|seam|background|good|ok|none/i.test(n))
+    .map(([n,c]) => `<span>${n} ${c}</span>`).join("");
+  card.innerHTML =
+    `<div class="lt"><h3>${man.name}</h3></div>
+     <div class="desc">${man.description || ""} · ${man.image_count} images ·
+       ${man.annotation_count} labelled defects</div>
+     <div class="cls">${cls}</div>
+     <div class="libgrid"></div>
+     <div class="act"><button class="libuse">Use this library</button>
+       <span class="note stored"></span></div>`;
+  const grid = card.querySelector(".libgrid");
+  // preview a spread of the images
+  const pics = man.images.filter((_,i) => i % Math.max(1, Math.floor(man.images.length/10)) === 0)
+                         .slice(0, 10);
+  for(const name of pics){
+    const img = document.createElement("img"); img.loading = "lazy"; grid.appendChild(img);
+    fetchCached(base + name).then(b => { img.src = URL.createObjectURL(b); });
+    img.onclick = () => showBig(img.src, `${man.name} · ${name}`);
+  }
+  const stored = card.querySelector(".stored");
+  if(await isStored(ds.dir)) stored.textContent = "stored on this device ✓";
+  card.querySelector(".libuse").onclick = async (e) => {
+    const btn = e.target; btn.disabled = true;
+    await loadPreloaded(ds.dir, $("#preState"), null, stored);
+    $("#libmodal").hidden = true;
+  };
+  return card;
+}
+async function openLibModal(){
+  const list = $("#libList");
+  $("#libmodal").hidden = false;
+  if(list.dataset.built) return;
+  list.innerHTML = "";
   try{
-    const cache = await caches.open(PRELOAD_CACHE);
-    const btn = document.querySelector(".pill[data-dir]");
-    if(btn && await cache.match(btn.dataset.dir.replace(/\/$/,"") + "/manifest.json"))
-      $("#preState").textContent = "stored on this device ✓";
-  }catch(_){}
-})();
+    for(const ds of PRELOADED) list.appendChild(await buildLibCard(ds));
+    list.dataset.built = "1";
+  }catch(e){ list.innerHTML = `<div class="note">Couldn't load: ${e.message}</div>`; }
+}
+$("#browseLib").onclick = openLibModal;
+$("#libClose").onclick = () => $("#libmodal").hidden = true;
+$("#libmodal").onclick = e => { if(e.target.id === "libmodal") $("#libmodal").hidden = true; };
+// reflect "stored ✓" on the option button up front
+(async () => { if(await isStored("datasets/swrd")) $("#preState").textContent = "· stored ✓"; })();
 $("#remember").onchange = saveKey;
 $("#model").value = localStorage.getItem("df_model") || "gemini-2.5-flash-image";
 $("#model").onchange = () => localStorage.setItem("df_model", $("#model").value);
