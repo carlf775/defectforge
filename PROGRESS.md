@@ -30,8 +30,10 @@ Updated: 2026-09-14
   split; the rest are generation bases. Part A weld = tube-to-fitting joint;
   Part B welds marked by lead Y/M letters. OPEN QUESTION: does "Soudure M" (no "ok")
   contain a real defect? If yes it must leave the good-bases and becomes real test data.
-- Gemini key: Carl's free-tier key is fine for Preview 3; full batch (~225 image calls,
-  ≈$9–10) needs billing enabled on the key.
+- Gemini key: free tier has ZERO quota for image models ("limit: 0") — billing on the key
+  is required even for Preview 3 (~$0.20); full batch ~225 image calls ≈ $9–10.
+  New-format keys start with "AQ." (not only "AIza"). Blocked here: Carl still has to
+  click "Set up billing", then re-run Preview 3.
 
 ## What exists
 
