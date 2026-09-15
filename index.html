@@ -761,7 +761,8 @@ function placeGuide(){
   if(!guideEl || !wrap) return;
   const wr = wrap.getBoundingClientRect(), gap = 14;
   const leftRoom = wr.left, rightRoom = innerWidth - wr.right;
-  const right = rightRoom >= leftRoom;                    // float in the roomier margin
+  // prefer the left margin; only go right if the left is too tight to be readable
+  const right = leftRoom < 190 + gap * 2 && rightRoom > leftRoom;
   const room = right ? rightRoom : leftRoom;
   // scale card width to the margin, within sensible bounds; font scales gently with it
   const w = Math.max(190, Math.min(340, Math.round(room - gap * 2)));
