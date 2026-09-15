@@ -46,6 +46,9 @@ header h1{font:700 25px/1.1 var(--display);letter-spacing:-.02em;margin:0}
   border-top:3px solid var(--ok);border-right:3px solid var(--ok);border-radius:3px}
 #guidebox.float.right::before{left:-10px;
   border-bottom:3px solid var(--ok);border-left:3px solid var(--ok);border-radius:3px}
+#guidebox.dock{position:fixed;left:8px;right:8px;bottom:8px;top:auto;width:auto;
+  font-size:13.5px;max-height:38vh;overflow:auto}
+#guidebox.dock::before{content:none}
 .next-glow{outline:4px solid var(--ok);outline-offset:4px;border-radius:var(--radius);
   animation:glowpulse 1.6s ease-in-out infinite}
 @keyframes glowpulse{
@@ -103,6 +106,22 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .inzone.clean .drop{border-color:color-mix(in srgb,var(--ok) 34%,transparent)}
 .inzone.clean .drop:hover{border-color:var(--ok)}
 .inzone .sub{font-size:12px;color:var(--muted);margin:0 0 10px}
+.markzone{margin-top:9px;width:100%;text-align:left;background:color-mix(in srgb,var(--ok) 14%,transparent);
+  border:1px solid color-mix(in srgb,var(--ok) 45%,transparent);border-radius:8px;padding:9px 13px;
+  color:var(--ink);font:600 13px var(--display);cursor:pointer;transition:.15s}
+.markzone:hover{background:color-mix(in srgb,var(--ok) 24%,transparent)}
+.markzone .note{font-weight:400}
+.togs{display:flex;flex-direction:column;gap:10px;margin-top:16px}
+.tog{display:flex;gap:9px;align-items:flex-start;font-size:12.5px;color:var(--muted);cursor:pointer}
+.tog input{margin-top:2px}
+.tog b{color:var(--ink)}
+#nextup{margin-top:18px;padding:16px 18px;border-radius:10px;
+  background:color-mix(in srgb,var(--ok) 10%,transparent);
+  border:1px solid color-mix(in srgb,var(--ok) 35%,transparent)}
+#nextup h3{font:700 15px var(--display);margin:0 0 8px}
+#nextup ol{margin:0;padding-left:20px;font-size:13px;line-height:1.6}
+#nextup li{margin-bottom:7px}
+#nextup code{background:var(--input);padding:1px 6px;border-radius:4px;font-size:12px}
 .opts{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 @media (max-width:560px){.opts{grid-template-columns:1fr}}
 .opt{display:flex;flex-direction:column;gap:3px;text-align:left;align-items:stretch;
@@ -273,7 +292,7 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
 defects onto your parts using real ones as a guide, and gives you a fully labelled dataset to
 train a detector. Every label is measured from exactly what changed — never guessed.</p>
 
-<div id="guidebox"></div>
+<div id="guidebox" role="status" aria-live="polite"></div>
 
 <section id="sG">
   <h2><i>1</i>Gemini</h2>
@@ -329,6 +348,8 @@ train a detector. Every label is measured from exactly what changed — never gu
         or drop them here</div>
       <input type="file" id="fGood" webkitdirectory directory multiple>
       <input type="file" id="fGoodF" accept="image/*,.json" multiple>
+      <button type="button" class="markzone" id="markZones" hidden>✎ Mark the weld area
+        <span class="note">— strongly recommended: keeps defects on the weld</span></button>
       <div id="goodInfo" class="note"></div>
     </div>
   </div>
@@ -376,6 +397,14 @@ train a detector. Every label is measured from exactly what changed — never gu
     <label for="hint">Extra prompt hint (optional)</label>
     <textarea id="hint" placeholder="e.g. defects should sit on the weld seam and be slightly out of focus"></textarea>
   </div>
+  <div class="togs">
+    <label class="tog"><input type="checkbox" id="balance" checked>
+      <span><b>Balance classes</b> — generate each defect type equally, so rare ones aren't
+      swamped by common ones. Best for a detector.</span></label>
+    <label class="tog"><input type="checkbox" id="holdout">
+      <span><b>Unseen-background test</b> — hold one clean image out of training and make a small
+      test set on it, so your accuracy number isn't measured on a background the model trained on.</span></label>
+  </div>
   </details>
   <p class="note" id="estimate"></p>
 </section>
@@ -394,6 +423,19 @@ train a detector. Every label is measured from exactly what changed — never gu
   <div class="log" id="log"></div>
   <div class="cards" id="cards"></div>
   <p class="note">Click an image to inspect · drop removes it from the dataset.</p>
+  <div id="nextup" hidden>
+    <h3>You have a dataset — what now?</h3>
+    <ol>
+      <li><b>Train a detector on it.</b> The zip is standard COCO with train/valid/test folders.
+        With Ultralytics YOLO: convert to YOLO format, then
+        <code>yolo segment train model=yolo11s-seg.pt data=data.yaml imgsz=640</code> —
+        or drop the zip into Roboflow and train there.</li>
+      <li><b>Run the false-alarm check.</b> Point the trained model at your <i>raw, clean</i> images.
+        It should find nothing. That number is the one fully-trustworthy metric here.</li>
+      <li><b>Be honest about scope.</b> This proves the pipeline and detection of synthetic defects
+        on your parts; real-defect recall needs a genuinely faulty part at some point.</li>
+    </ol>
+  </div>
 </section>
 
 <div id="anno">
@@ -410,12 +452,12 @@ train a detector. Every label is measured from exactly what changed — never gu
     </span>
   </div>
   <div class="stage"><canvas id="aCanvas"></canvas></div>
-  <div class="hint">pick a class, then click around the defect to place points — click the first
-    point again (or double-click / Enter) to close the mask · esc cancels the shape ·
+  <div class="hint"><span id="aHint">pick a class, then click around the defect to place points —
+    click the first point again (or double-click / Enter) to close the mask</span> · esc cancels ·
     <b>z</b> undo · ←/→ change image</div>
 </div>
 
-<div id="exmodal" hidden>
+<div id="exmodal" role="dialog" aria-modal="true" aria-label="Enlarged image" hidden>
   <div class="exwrap">
     <canvas id="exCanvas"></canvas>
     <div id="exCap" class="cap"></div>
@@ -423,7 +465,7 @@ train a detector. Every label is measured from exactly what changed — never gu
   </div>
 </div>
 
-<div id="libmodal" hidden>
+<div id="libmodal" role="dialog" aria-modal="true" aria-label="Stored defect libraries" hidden>
   <div class="libpanel">
     <div class="libhead">
       <b>Stored defect libraries</b>
@@ -895,6 +937,7 @@ function applyDisclosure(){
 function ready(){
   const ok = state.exemplars.length && state.goods.length && chosen().length && $("#key").value.trim();
   $("#go").disabled = $("#try").disabled = !ok || running;
+  $("#markZones").hidden = !state.goods.length;
   applyDisclosure();
   const n = (+$("#ntrain").value||0) + (+$("#nvalid").value||0);
   const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
@@ -908,10 +951,8 @@ function ready(){
 const GUIDE_STEPS = [
   [() => state.lastApiError === "CHECKING", "#key", () =>
    `<b>Checking your key…</b>`],
-  [() => state.lastApiError === "KEY_OK", "#try", () =>
-   `<b>Your key works.</b>
-    <div class="how">Press the button again.
-    <a href="#" onclick="state.lastApiError=null;nextStep();return false">ok</a></div>`],
+  [() => state.lastApiError === "KEY_OK", "#key", () =>
+   `<b>Your key works ✓</b>`],
   [() => !!state.lastApiError && !running, "#key", () => {
     const [what, fix] = explainApiError(state.lastApiError);
     return `<b>Something went wrong: ${what}</b>
@@ -950,6 +991,12 @@ function placeGuide(){
   if(!guideEl || !wrap) return;
   const wr = wrap.getBoundingClientRect(), gap = 14;
   const leftRoom = wr.left, rightRoom = innerWidth - wr.right;
+  // no usable side margin (phones/narrow): dock a compact bar at the bottom instead of overlapping
+  if(Math.max(leftRoom, rightRoom) < 170){
+    box.className = "dock";
+    box.style.width = ""; box.style.fontSize = ""; box.style.top = ""; box.style.left = "";
+    return;
+  }
   // prefer the left margin; only go right if the left is too tight to be readable
   const right = leftRoom < 190 + gap * 2 && rightRoom > leftRoom;
   const room = right ? rightRoom : leftRoom;
@@ -992,7 +1039,13 @@ $("#key").value = localStorage.getItem(KEY) || "";
 $("#remember").checked = !!localStorage.getItem(KEY);
 const saveKey = () => $("#remember").checked
   ? localStorage.setItem(KEY, $("#key").value) : localStorage.removeItem(KEY);
-$("#key").oninput = () => { state.lastApiError = null; saveKey(); ready(); };
+let keyProbe = 0;
+$("#key").oninput = () => {
+  state.lastApiError = null; saveKey(); ready();
+  clearTimeout(keyProbe);
+  const k = $("#key").value.trim();
+  if(k.length >= 20) keyProbe = setTimeout(() => { if($("#key").value.trim() === k) checkKey(); }, 900);
+};
 $("#fAnnF").onchange = e => $("#fAnn").onchange(e);
 $("#fGoodF").onchange = e => $("#fGood").onchange(e);
 
@@ -1216,12 +1269,15 @@ window.checkKey = async () => {
     state.lastApiError = r.ok ? "KEY_OK" : (j.error?.message || `HTTP ${r.status}`);
   }catch(e){ state.lastApiError = String(e.message || e); }
   nextStep();
+  if(state.lastApiError === "KEY_OK")            // valid key: confirm briefly, then move on
+    setTimeout(() => { if(state.lastApiError === "KEY_OK"){ state.lastApiError = null; nextStep(); } }, 2200);
 };
 
 /* ---------- generation ---------- */
 async function generateOne(split, idx, weights, hint, tag){
   const rnd = mulberry32((+$("#seed").value||1)*7919 + idx*104729 + (split==="valid"?13:0));
-  const goodFile = pick(rnd, state.goods);
+  const pool = (split === "test" ? runPools.held : runPools.base);
+  const goodFile = pick(rnd, pool.length ? pool : state.goods);
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
@@ -1230,7 +1286,12 @@ async function generateOne(split, idx, weights, hint, tag){
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
   const retries = +$("#retries").value||0;
   for(let d=0; d<k && !abort; d++){
-    const ex = pick(rnd, weights);
+    // balanced: equal chance per class (helps rare/weak classes); else natural mix
+    let ex;
+    if($("#balance").checked && weights.byClass){
+      const cls = pick(rnd, weights.classes);
+      ex = pick(rnd, weights.byClass[cls]);
+    }else ex = pick(rnd, weights.list || weights);
     const crop = await cropCanvas(ex);
     const [lo,hi] = SIZES[sizeChoice()];
     let region;
@@ -1316,7 +1377,9 @@ async function run(jobs, tag){
   running = true; abort = false;
   $("#go").disabled = $("#try").disabled = $("#zip").disabled = true; $("#stop").disabled = false;
   const picked = new Set(chosen());
-  const weights = state.exemplars.filter(e => picked.has(e.name));   // natural mix within selection
+  const list = state.exemplars.filter(e => picked.has(e.name));
+  const byClass = {}; for(const e of list) (byClass[e.name] ||= []).push(e);
+  const weights = {list, byClass, classes: Object.keys(byClass)};   // supports natural + balanced
   const hint = $("#hint").value;
   let done = 0;
   const worker = async () => {
@@ -1340,9 +1403,29 @@ async function run(jobs, tag){
   ready();
 }
 const jobList = (n, split) => Array.from({length:n}, () => [split, state.job++]);
-$("#go").onclick = () => run([...jobList(+$("#ntrain").value||0, "train"),
-                              ...jobList(+$("#nvalid").value||0, "valid")], "");
-$("#try").onclick = () => run(jobList(3, "train"), "preview");
+let runPools = {base:[], held:[]};
+function computePools(){
+  const holdout = $("#holdout").checked && state.goods.length >= 2;
+  runPools = holdout
+    ? {base: state.goods.slice(0, -1), held: state.goods.slice(-1)}
+    : {base: state.goods, held: []};
+  return holdout;
+}
+$("#go").onclick = () => {
+  const holdout = computePools();
+  const nTr = +$("#ntrain").value||0, nVa = +$("#nvalid").value||0;
+  const nTest = holdout ? Math.min(30, Math.max(12, Math.round(nTr*0.2))) : 0;
+  const total = nTr + nVa + nTest;
+  const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
+  const calls = Math.round(total*avg);
+  const ok = confirm(`Generate ${total} images (${nTr} train, ${nVa} valid` +
+    (nTest ? `, ${nTest} unseen-background test` : "") + `).\n\n` +
+    `This makes about ${calls} paid Gemini image calls. Continue?`);
+  if(!ok) return;
+  run([...jobList(nTr, "train"), ...jobList(nVa, "valid"),
+       ...(nTest ? jobList(nTest, "test") : [])], "");
+};
+$("#try").onclick = () => { computePools(); run(jobList(3, "train"), "preview"); };
 $("#stop").onclick = () => { abort = true; log("stopping after in-flight requests…"); };
 
 /* ---------- export ---------- */
@@ -1355,7 +1438,8 @@ function coco(desc, images, annotations){
 $("#zip").onclick = async () => {
   $("#zip").disabled = true; log("zipping…");
   const z = new JSZip();
-  for(const split of ["train","valid"]){
+  const hasGenTest = state.results.some(r => r.split === "test");  // unseen-background test exists
+  for(const split of ["train","valid","test"]){
     const rs = state.results.filter(r => r.split===split);
     if(!rs.length) continue;
     const images=[], anns=[]; let aid=1;
@@ -1374,13 +1458,15 @@ $("#zip").onclick = async () => {
     z.file(`${split}/_annotations.coco.json`, coco(`synthetic ${split}`, images, anns));
   }
   if(state.testImages.length){
+    // real annotated defects: their own folder when a synthetic unseen-background test exists
+    const folder = hasGenTest ? "test_real" : "test";
     const images=[], anns=[]; let aid=1; const idOf=new Map();
     for(const [i,im] of state.testImages.entries()){
       let {w,h} = im;
       if(!w || !h){ const b = await createImageBitmap(im.file); w=b.width; h=b.height; b.close(); }
       idOf.set(im.name, i+1);
       images.push({id:i+1, file_name:im.name, width:w, height:h, license:0, date_captured:""});
-      z.file(`test/${im.name}`, im.file);
+      z.file(`${folder}/${im.name}`, im.file);
     }
     for(const a of state.testAnns){
       const id = idOf.get(a.img); if(!id) continue;
@@ -1389,7 +1475,7 @@ $("#zip").onclick = async () => {
                  iscrowd:a.iscrowd,
                  segmentation:a.seg?.length ? a.seg : [[x,y, x+w,y, x+w,y+h, x,y+h]]});
     }
-    z.file("test/_annotations.coco.json", coco("real (held out)", images, anns));
+    z.file(`${folder}/_annotations.coco.json`, coco("real annotated defects", images, anns));
   }
   const blob = await z.generateAsync({type:"blob"}, m =>
     $("#prog").style.width = m.percent + "%");
@@ -1398,6 +1484,8 @@ $("#zip").onclick = async () => {
   URL.revokeObjectURL(a.href);
   log(`zip ready · ${(blob.size/1e6).toFixed(1)} MB`);
   $("#zip").disabled = false;
+  $("#nextup").hidden = false;
+  $("#nextup").scrollIntoView({behavior:"smooth", block:"nearest"});
 };
 
 /* ---------- self-test: does the measurement actually measure? ---------- */
@@ -1443,16 +1531,25 @@ window.selfTest = function(){
 $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 /* ---------- built-in annotator ---------- */
 const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1,
-              cur:[], mouse:null};
+              cur:[], mouse:null, mode:"defect"};
 // "draw them here" opens the built-in annotator on a folder of raw images
 $("#annotateHere").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#fRaw").click(); };
-function openAnnotator(imgs){
+function openAnnotator(imgs, mode="defect", existing){
   if(!imgs.length){ $("#annInfo").textContent = "nothing to annotate — pick some images first"; return; }
-  anno.imgs = imgs;
-  anno.idx = 0; anno.boxes = new Map(); anno.cur = []; anno.mouse = null;
+  anno.imgs = imgs; anno.mode = mode;
+  anno.idx = 0; anno.boxes = existing || new Map(); anno.cur = []; anno.mouse = null;
+  if(mode === "zone"){ anno.classes = ["weld"]; anno.cls = "weld"; }
+  $("#anno").dataset.mode = mode;
+  $("#aDone").textContent = mode === "zone" ? "Save weld areas" : "Done";
+  $("#aHint").textContent = mode === "zone"
+    ? "Outline the weld area on each part — defects will be placed only inside it. "
+      + "Click points around it, click the first point to close."
+    : "Pick a class, then click around each defect to place points; click the first point to close.";
   $("#anno").classList.add("on"); annoShow(0);
+  annoClasses();
 }
 $("#fRaw").onchange = e => openAnnotator(fileReport(e.target.files).imgs);
+$("#markZones").onclick = () => openAnnotator(state.goods, "zone");
 async function annoShow(i){
   anno.idx = Math.max(0, Math.min(anno.imgs.length-1, i));
   if(anno.bmp) anno.bmp.close();
@@ -1589,7 +1686,27 @@ $("#aSave").onclick = async () => {
   a.download = "_annotations.coco.json"; a.click();
   URL.revokeObjectURL(a.href);
 };
+async function finishZones(){
+  // turn the drawn polygons into placement zones on the good images
+  const zones = {};
+  for(const [i, shapes] of anno.boxes.entries()){
+    if(!shapes.length) continue;
+    const bmp = await createImageBitmap(anno.imgs[i]);
+    zones[anno.imgs[i].name] = {size:[bmp.width, bmp.height],
+      polys: shapes.map(s => s.poly.flatMap(p => [Math.round(p[0]), Math.round(p[1])]))};
+    bmp.close();
+  }
+  const covered = Object.keys(zones).length;
+  if(!covered){ $("#anno").classList.remove("on"); return; }
+  state.zones = zones; zoneCache.clear();
+  $("#anno").classList.remove("on");
+  const r = fileReport(state.goods);
+  $("#goodInfo").textContent = `${r.text} · weld areas marked on ${covered}/${state.goods.length} `
+    + `image(s) — defects will be aimed at and kept inside them`;
+  ready();
+}
 $("#aDone").onclick = async () => {
+  if(anno.mode === "zone") return finishZones();
   const coco = await annoCoco();
   if(!coco.annotations.length) return $("#aClose").click();
   // merge the drawn defects into the library (reuse category ids by name)

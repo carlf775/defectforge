@@ -35,6 +35,24 @@ Updated: 2026-09-14
   New-format keys start with "AQ." (not only "AIza"). Blocked here: Carl still has to
   click "Set up billing", then re-run Preview 3.
 
+## UX audit follow-through (2026-09-15)
+
+Implemented across index.html from the platform audit:
+- **In-app weld-zone drawing** — "Mark the weld area" button on the clean-items zone opens the
+  annotator in zone mode over the good images; polygons become `state.zones` (no external COCO
+  json needed). This unlocks the placement constraint for every user, not just pre-made jsons.
+- **Balance classes** (advanced, default ON) — generation picks each selected defect type
+  equally instead of the natural 82%-porosity mix; helps the weak classes.
+- **Proactive key check** — debounced probe on key entry validates it and reports capability
+  before the user builds everything; valid keys self-clear.
+- **Cost confirm** before the full batch (concrete image count + call estimate).
+- **Unseen-background test** (advanced) — holds one clean image out of train/valid bases and
+  generates a small test set on it → zip `test/`; real defects then go to `test_real/`.
+- **Post-export "what now"** panel — how to train, the false-alarm check, honest-scope reminder.
+- **Mixing** defect sources (stored library + own + drawn) accumulate with source breakdown,
+  dedup, and clear.
+- Mobile: guide docks to a bottom bar when there's no side margin; basic aria on modals/guide.
+
 ## What exists
 
 - **Live tool**: https://carlf775.github.io/defectforge/ — browser app, generates synthetic
