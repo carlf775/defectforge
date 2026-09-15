@@ -132,8 +132,11 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .libcard h3{font:700 15px var(--display);margin:0}
 .libcard .desc{color:var(--muted);font-size:12.5px;margin:3px 0 10px}
 .libcard .cls{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
-.libcard .cls span{font-size:11.5px;color:var(--muted);background:rgba(255,255,255,.06);
-  padding:2px 8px;border-radius:999px}
+.libcard .cls .clschip{font:600 11.5px var(--display);color:var(--muted);
+  background:rgba(255,255,255,.06);padding:3px 10px;border-radius:999px;border:1px solid transparent;
+  cursor:pointer;transition:.12s}
+.libcard .cls .clschip:hover{color:var(--ink);background:rgba(255,255,255,.11)}
+.libcard .cls .clschip.on{color:var(--accent-ink);background:var(--ok);border-color:var(--ok)}
 .libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(84px,1fr));gap:7px;margin-bottom:13px}
 .libgrid img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:6px;background:#111;cursor:zoom-in}
 .libcard .act{display:flex;align-items:center;gap:12px}
@@ -308,6 +311,8 @@ train a detector. Every label is measured from exactly what changed — never gu
           <span>A folder with images + COCO json ·
             <a href="#" id="pickAnnFiles" onclick="event.stopPropagation()">pick files</a> ·
             or drop here</span>
+          <span class="note">Not annotated yet?
+            <a href="#" id="annotateHere" onclick="event.stopPropagation()">draw them here</a></span>
         </div>
       </div>
       <input type="file" id="fAnn" webkitdirectory directory multiple>
@@ -824,6 +829,17 @@ function showBig(src, cap){
   };
   im.src = src;
 }
+async function showBigBoxed(blob, name, cap, box){
+  const bmp = await createImageBitmap(blob);
+  const c = $("#exCanvas"); c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext("2d"); g.drawImage(bmp, 0, 0); bmp.close();
+  if(box){
+    g.lineWidth = Math.max(2, Math.round(Math.max(c.width, c.height) / 320));
+    g.strokeStyle = colorForLabel(name);
+    g.strokeRect(box[0], box[1], box[2], box[3]);
+  }
+  $("#exCap").textContent = cap; $("#exmodal").hidden = false;
+}
 $("#exmodal").onclick = () => $("#exmodal").hidden = true;
 addEventListener("keydown", e => { if(e.key === "Escape"){
   $("#exmodal").hidden = true; $("#libmodal").hidden = true; } });
@@ -995,27 +1011,57 @@ async function isStored(dir){
 async function buildLibCard(ds){
   const base = ds.dir.replace(/\/$/,"") + "/";
   const man = JSON.parse(await (await fetchCached(base + "manifest.json")).text());
+  // COCO gives us which class sits in which image (+ where), so chips can filter
+  let coco = {};
+  try { coco = JSON.parse(await (await fetchCached(base + man.annotations)).text()); } catch(_){}
+  const names = {}, imgById = {};
+  (coco.categories||[]).forEach(c => names[c.id] = c.name);
+  (coco.images||[]).forEach(i => imgById[i.id] = i.file_name);
+  const byClass = {};                          // class -> [{file, box}]
+  (coco.annotations||[]).forEach(a => {
+    const nm = names[a.category_id]; if(!nm) return;
+    (byClass[nm] ||= []).push({file: imgById[a.image_id], box: a.bbox});
+  });
+  const isDefect = n => !/weld_?seam|seam|background|good|ok|none/i.test(n);
+
   const card = document.createElement("div"); card.className = "libcard";
-  const cls = Object.entries(man.classes || {})
-    .filter(([n]) => !/weld_?seam|seam|background|good|ok|none/i.test(n))
-    .map(([n,c]) => `<span>${n} ${c}</span>`).join("");
+  const cls = Object.entries(man.classes || {}).filter(([n]) => isDefect(n))
+    .map(([n,c]) => `<button type="button" class="clschip" data-cls="${n}">${n} ${c}</button>`).join("");
   card.innerHTML =
     `<div class="lt"><h3>${man.name}</h3></div>
      <div class="desc">${man.description || ""} · ${man.image_count} images ·
        ${man.annotation_count} labelled defects</div>
-     <div class="cls">${cls}</div>
+     <div class="cls"><button type="button" class="clschip on" data-cls="">all</button>${cls}</div>
      <div class="libgrid"></div>
      <div class="act"><button class="libuse">Use this library</button>
        <span class="note stored"></span></div>`;
   const grid = card.querySelector(".libgrid");
-  // preview a spread of the images
-  const pics = man.images.filter((_,i) => i % Math.max(1, Math.floor(man.images.length/10)) === 0)
-                         .slice(0, 10);
-  for(const name of pics){
-    const img = document.createElement("img"); img.loading = "lazy"; grid.appendChild(img);
-    fetchCached(base + name).then(b => { img.src = URL.createObjectURL(b); });
-    img.onclick = () => showBig(img.src, `${man.name} · ${name}`);
-  }
+
+  const renderGrid = (cls) => {
+    grid.innerHTML = "";
+    let items;
+    if(cls && byClass[cls]){                    // dedup images of this class, keep a box each
+      const seen = new Set();
+      items = byClass[cls].filter(it => it.file && !seen.has(it.file) && seen.add(it.file)).slice(0, 12);
+    } else {                                     // a spread across the whole set
+      const step = Math.max(1, Math.floor(man.images.length/12));
+      items = man.images.filter((_,i)=>i%step===0).slice(0,12).map(f => ({file:f, box:null}));
+    }
+    for(const it of items){
+      const img = document.createElement("img"); img.loading = "lazy"; grid.appendChild(img);
+      fetchCached(base + it.file).then(b => {
+        const blob = b; img.src = URL.createObjectURL(b);
+        img.onclick = () => showBigBoxed(blob, cls || man.name,
+          `${man.name}${cls ? " · " + cls : ""} · ${it.file}`, it.box);
+      });
+    }
+  };
+  renderGrid("");
+  card.querySelectorAll(".clschip").forEach(chip => chip.onclick = () => {
+    card.querySelectorAll(".clschip").forEach(c => c.classList.toggle("on", c === chip));
+    renderGrid(chip.dataset.cls);
+  });
+
   const stored = card.querySelector(".stored");
   if(await isStored(ds.dir)) stored.textContent = "stored on this device ✓";
   card.querySelector(".libuse").onclick = async (e) => {
@@ -1359,7 +1405,8 @@ $("#st").onclick = e => { e.preventDefault(); alert(window.selfTest()); };
 /* ---------- built-in annotator ---------- */
 const anno = {imgs:[], idx:0, boxes:new Map(), classes:[], cls:null, bmp:null, scale:1,
               cur:[], mouse:null};
-// "draw them here" now lives in the guide box, which triggers #fRaw directly
+// "draw them here" opens the built-in annotator on a folder of raw images
+$("#annotateHere").onclick = e => { e.preventDefault(); e.stopPropagation(); $("#fRaw").click(); };
 $("#fRaw").onchange = e => {
   const r = fileReport(e.target.files);
   anno.imgs = r.imgs;
