@@ -19,8 +19,13 @@ Updated: 2026-09-14
   Recipe that worked: SWRD pretrain (yolo11n-seg, 960px, box mAP50 0.945) then fine-tune
   on 200 SWRD + the 6 part-train images repeated 30× (val = held-out part image,
   mask mAP50 0.995). Zero-shot SWRD→parts does NOT work (whole-frame boxes).
-- **Defect detector pretraining** (yolo11s-seg, 6 SWRD classes, 960px) launched — check
-  `runs/segment/train/runs/defect_pretrain/`.
+- **Defect detector pretraining DONE — use the tiled one**:
+  `runs/segment/train/runs/defect_tiles/weights/best.pt` (yolo11s-seg, 640px tiles from
+  `tools/tile_dataset.py`: crops centered on defects + defect-free seam negatives).
+  Tile-val box mAP50 0.45 overall, porosity 0.68, undercut 0.79; weak: inclusion 0.20,
+  lack_of_penetration 0.17 → generate extra synthetic examples of those two classes.
+  (Whole-image variant in defect_pretrain/ scored 0.39 — panorama downscale kills small
+  defects; train and infer on tiles.)
 - **Two parts now, not one**: per part reserve 1 image for the unseen-background test
   split; the rest are generation bases. Part A weld = tube-to-fitting joint;
   Part B welds marked by lead Y/M letters. OPEN QUESTION: does "Soudure M" (no "ok")
