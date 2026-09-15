@@ -300,7 +300,8 @@ train a detector. Every label is measured from exactly what changed — never gu
   <div class="grid g2">
     <div class="inzone def">
       <span class="tag">◆ Defect library</span>
-      <p class="sub">Real annotated defects — the AI copies their look. Kept as the test split.</p>
+      <p class="sub">Real annotated defects — the AI copies their look. Kept as the test split.
+        Mix both if you like: a stored library <b>plus</b> your own add together.</p>
       <div class="opts">
         <button type="button" class="opt" id="browseLib">
           <b>Choose a stored library</b>
@@ -497,7 +498,7 @@ const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.ch
 const colorForLabel = l => l ? `oklch(0.75 0.28 ${((hashStr(l)*GOLDEN_ANGLE)%360).toFixed(1)})` : "white";
 
 const state = {cats:[], catId:new Map(), testImages:[], testAnns:[], exemplars:[], goods:[],
-               results:[], seq:0, job:0, lastApiError:null};
+               results:[], seq:0, job:0, lastApiError:null, defectSources:[]};
 let running = false, abort = false;
 
 /* ---------- tiny helpers ---------- */
@@ -750,8 +751,13 @@ $("#fAnn").onchange = async e => {
       " — no COCO .json in the selection; add one, or use \u201cdraw them here\u201d below";
     return;
   }
-  state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[]; state.exemplars=[];
-  const counts = new Map();
+  // a defect source can be ADDED to what's already loaded — mix your own with a library
+  const src = (e.detail && typeof e.detail === "object") ? e.detail : {};
+  if(src.key && state.defectSources.some(s => s.key === src.key)){
+    renderDefectInfo(`“${src.name}” is already in your defect library.`);
+    return;
+  }
+  const before = state.exemplars.length;
   for(const jf of jsons){
     let coco; try{ coco = JSON.parse(await jf.text()); }catch{ continue; }
     if(!coco.annotations || !coco.images) continue;
@@ -775,22 +781,48 @@ $("#fAnn").onchange = async e => {
       const [x,y,w,h] = a.bbox.map(v => Math.round(v));
       state.testAnns.push({img:im.name, cat:cid, bbox:[x,y,w,h],
                            seg:a.segmentation, iscrowd:a.iscrowd||0});
-      if(w>=6 && h>=6){
+      if(w>=6 && h>=6)
         state.exemplars.push({file:im.file, bbox:[x,y,w,h], cat:cid, name});
-        counts.set(name,(counts.get(name)||0)+1);
-      }
     }
     for(const im of imgs.values())
       if(!state.testImages.some(t => t.name===im.name)) state.testImages.push(im);
   }
-  $("#annInfo").textContent = state.testAnns.length
-    ? `${state.testImages.length} image(s), ${state.testAnns.length} annotation(s), ` +
-      `${state.cats.length} class(es) → test split`
+  const added = state.exemplars.length - before;
+  if(added > 0)
+    state.defectSources.push({name: src.name || "your upload", key: src.key || null, n: added});
+  refreshDefectLibrary(added
+    ? null
     : "json found, but no annotations matched the images — check that the json's file_name " +
-      "entries match the image filenames in the folder";
-  renderClasses(counts);
-  ready();
+      "entries match the image filenames in the folder");
 };
+
+// counts derived from ALL loaded exemplars, so mixed sources total correctly
+function defectCounts(){
+  const c = new Map();
+  for(const ex of state.exemplars) c.set(ex.name, (c.get(ex.name)||0)+1);
+  return c;
+}
+function renderDefectInfo(msg){
+  if(msg){ $("#annInfo").textContent = msg; return; }
+  if(!state.exemplars.length){ $("#annInfo").textContent = ""; return; }
+  const srcs = state.defectSources.map(s => `${s.name} (${s.n})`).join(" + ");
+  $("#annInfo").innerHTML =
+    `Defect library: <b>${state.exemplars.length}</b> defects across ${state.cats.length} ` +
+    `class(es) → test split · ${srcs} · <a href="#" id="clearDef">clear</a>`;
+  const cl = $("#clearDef"); if(cl) cl.onclick = ev => { ev.preventDefault(); clearDefects(); };
+}
+function refreshDefectLibrary(msg){
+  renderClasses(defectCounts());
+  renderDefectInfo(msg);
+  ready();
+}
+function clearDefects(){
+  state.cats=[]; state.catId=new Map(); state.testImages=[]; state.testAnns=[];
+  state.exemplars=[]; state.defectSources=[];
+  $("#chips").innerHTML=""; $("#thumbs").innerHTML=""; $("#classBox").hidden=true;
+  $("#annInfo").textContent=""; $("#preState").textContent="";
+  ready();
+}
 
 function renderClasses(counts){
   const chips = $("#chips"); chips.innerHTML = "";
@@ -998,7 +1030,8 @@ async function loadPreloaded(dir, statusEl, btn, storedEl){
       if(statusEl) statusEl.textContent = `loading… ${++done}/${manifest.images.length}`;
     }
     $("#fAnn").files = dt.files;
-    $("#fAnn").dispatchEvent(new Event("change"));
+    $("#fAnn").dispatchEvent(new CustomEvent("change",
+      {detail: {name: manifest.name || "stored library", key: base}}));
     if(statusEl) statusEl.textContent = "· loaded, stored ✓";
     if(storedEl) storedEl.textContent = "stored on this device ✓";
   }catch(e){
@@ -1559,30 +1592,32 @@ $("#aSave").onclick = async () => {
 $("#aDone").onclick = async () => {
   const coco = await annoCoco();
   if(!coco.annotations.length) return $("#aClose").click();
-  state.cats = coco.categories;
-  state.catId = new Map(coco.categories.map(c => [c.name, c.id]));
-  state.testImages = []; state.testAnns = []; state.exemplars = [];
+  // merge the drawn defects into the library (reuse category ids by name)
   const byName = new Map(anno.imgs.map(f => [f.name, f]));
-  const counts = new Map(), names = new Map(coco.categories.map(c => [c.id, c.name]));
+  const names = new Map(coco.categories.map(c => [c.id, c.name]));
+  const before = state.exemplars.length;
   for(const im of coco.images)
-    state.testImages.push({file:byName.get(im.file_name), w:im.width, h:im.height,
-                           name:im.file_name});
+    if(!state.testImages.some(t => t.name === im.file_name))
+      state.testImages.push({file:byName.get(im.file_name), w:im.width, h:im.height,
+                             name:im.file_name});
   const imgName = new Map(coco.images.map(im => [im.id, im.file_name]));
   for(const a of coco.annotations){
-    state.testAnns.push({img:imgName.get(a.image_id), cat:a.category_id, bbox:a.bbox,
-                         seg:a.segmentation, iscrowd:0});
-    if(a.bbox[2] >= 6 && a.bbox[3] >= 6){
-      const n = names.get(a.category_id);
-      state.exemplars.push({file:byName.get(imgName.get(a.image_id)), bbox:a.bbox,
-                            cat:a.category_id, name:n});
-      counts.set(n, (counts.get(n)||0)+1);
+    const n = names.get(a.category_id);
+    if(!state.catId.has(n)){
+      state.catId.set(n, state.catId.size+1);
+      state.cats.push({id:state.catId.size, name:n, supercategory:"defect"});
     }
+    const cid = state.catId.get(n);
+    state.testAnns.push({img:imgName.get(a.image_id), cat:cid, bbox:a.bbox,
+                         seg:a.segmentation, iscrowd:0});
+    if(a.bbox[2] >= 6 && a.bbox[3] >= 6)
+      state.exemplars.push({file:byName.get(imgName.get(a.image_id)), bbox:a.bbox,
+                            cat:cid, name:n});
   }
+  const added = state.exemplars.length - before;
+  if(added > 0) state.defectSources.push({name:"drawn here", key:null, n:added});
   $("#anno").classList.remove("on");
-  $("#annInfo").textContent = `annotated here: ${state.testImages.length} image(s), `+
-    `${state.testAnns.length} annotation(s), ${state.cats.length} class(es) → test split. `+
-    `Use "save COCO json" next time to skip redoing this.`;
-  renderClasses(counts); ready();
+  refreshDefectLibrary();
 };
 
 /* ---------- lightbox: inspect one result full-size ---------- */
