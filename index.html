@@ -542,17 +542,18 @@ that same kind of flaw. ${weldCrop
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-REQUIRED — the edit must be real and obvious:
-- The defect MUST be clearly visible, distinctly darker or lighter than the metal around it, exactly
-  as a genuine radiographic flaw appears. If in doubt, make it more visible, not less.
-- Do NOT return image 1 unchanged. Do NOT return a near-identical image. An unchanged image is a
-  failure.
-- Add ONLY the defect. Do not paint several; exactly one.
+Think of it as painting ONE small defect on top of image 1 and returning image 1 otherwise
+completely untouched — like a transparent overlay that only covers the defect.
 
-Keep everything else pixel-for-pixel identical to image 1 — same camera angle, framing, zoom,
-lighting, contrast, colours, background, grain and resolution. Every pixel outside the added defect
-must be unchanged. Do not restyle, denoise, sharpen, re-expose, crop, or add any text, labels,
-arrows, outlines or watermarks. Output only the edited image.`;
+REQUIRED:
+- Add exactly ONE "${cat}" defect. It must be clearly visible — distinctly darker or lighter than
+  the metal around it, exactly as a genuine radiographic flaw looks. If in doubt, more visible.
+- Do NOT redraw, regenerate, restyle, denoise, sharpen or re-expose the surface. Keep the EXACT
+  same metal texture, grain, noise, brightness and contrast as image 1 everywhere.
+- Every pixel that is not the defect itself must be byte-for-byte identical to image 1. Only the
+  small defect region may differ.
+- Do NOT return an unchanged image, and do NOT add any text, labels, arrows, outlines or watermarks.
+Output only the edited image, same size as image 1.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -683,7 +684,38 @@ function diffBBox(before, after, restrict){
   return {box:[Math.round(best[0]*k), Math.round(best[1]*k),
                Math.round(best[2]*k), Math.round(best[3]*k)],
           poly, maskArea: Math.round(bestSize*k*k),
-          strength: Math.round(sum/Math.max(1,cnt)/255*100)};
+          strength: Math.round(sum/Math.max(1,cnt)/255*100),
+          comp, cw:w, ch:h};              // the defect pixel mask, for a seamless overlay
+}
+// overlay ONLY the detected defect onto the original — everything else stays pixel-identical,
+// with a feathered edge so the defect blends instead of looking pasted in
+function overlayDefect(base, edited, comp, w, h){
+  let a = new Float32Array(w*h);
+  for(let i=0;i<w*h;i++) a[i] = comp[i] ? 1 : 0;
+  a = boxBlur(a, w, h, 2); a = boxBlur(a, w, h, 2);   // soft edge
+  const bd = base.getContext("2d").getImageData(0,0,w,h);
+  const ed = edited.getContext("2d").getImageData(0,0,w,h);
+  for(let i=0;i<w*h;i++){
+    const al = a[i]; if(al <= 0.003) continue;
+    const j=i*4, ia=1-al;
+    bd.data[j]  = bd.data[j]  *ia + ed.data[j]  *al;
+    bd.data[j+1]= bd.data[j+1]*ia + ed.data[j+1]*al;
+    bd.data[j+2]= bd.data[j+2]*ia + ed.data[j+2]*al;
+  }
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").putImageData(bd,0,0); return c;
+}
+function boxBlur(src, w, h, r){
+  const tmp=new Float32Array(w*h), out=new Float32Array(w*h), d=2*r+1;
+  for(let y=0;y<h;y++){ let s=0; const o=y*w;
+    for(let x=-r;x<=r;x++) s+=src[o+Math.min(w-1,Math.max(0,x))];
+    for(let x=0;x<w;x++){ tmp[o+x]=s/d;
+      s+=src[o+Math.min(w-1,x+r+1)]-src[o+Math.max(0,x-r)]; } }
+  for(let x=0;x<w;x++){ let s=0;
+    for(let y=-r;y<=r;y++) s+=tmp[x+w*Math.min(h-1,Math.max(0,y))];
+    for(let y=0;y<h;y++){ out[x+y*w]=s/d;
+      s+=tmp[x+w*Math.min(h-1,y+r+1)]-tmp[x+w*Math.max(0,y-r)]; } }
+  return out;
 }
 const plausible = (box,w,h) => {
   if(!box) return false;
@@ -1384,14 +1416,15 @@ async function generateOne(split, idx, weights, hint, tag){
       }else{
         full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
       }
-      // apply only the weld-mask pixels (no crop-rectangle seam), then measure inside the mask
-      const stitched = zone ? maskCompositeFull(cur, full, zone.mask) : full;
-      const m = diffBBox(cur, stitched, zone ? zone.mask : null);
+      // measure the defect Gemini added (inside the weld mask)...
+      const m = diffBBox(cur, full, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height)){
+        // ...then overlay ONLY that defect onto the original — surface stays pixel-identical
+        const composite = overlayDefect(cur, full, m.comp, m.cw, m.ch);
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
-        cur = stitched; break;
+        cur = composite; break;
       }
       log(`  · ${split} ${idx}: nothing usable landed on the weld, retrying`);
       await addRejectedCard(full, zone ? "nothing on the weld" : "no visible defect added", cur);
