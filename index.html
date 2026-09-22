@@ -528,13 +528,18 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
 
 const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
   const name = cat.replace(/_/g, " ");
-  // short, direct instruction — the way the model responds best (plain image + plain ask)
-  return `This is an X-ray radiograph of a welded metal part. Add one small, realistic ${name} `
-    + `defect on the weld seam, exactly like a real radiograph of that flaw would look. ${sev} `
-    + `Make it roughly ${size}% of the image width — clearly visible, but realistic, not huge.\n`
-    + `Image 2 is a close-up of a real ${name} defect; match its look and texture.\n`
-    + `Keep everything else the same — same weld, part, background, brightness and framing. Add only `
-    + `the defect, on the weld seam${hint ? ". " + hint.trim() : ""}. No text, arrows, outlines or marks.`;
+  return `You are editing image 1, an X-ray radiograph of a welded metal part. Do NOT create a new
+image — return image 1 itself, edited, with the SAME part, framing, zoom, background, brightness and
+resolution. Image 2 is a close-up of a real "${name}" defect for reference.
+
+Add exactly ONE realistic "${name}" defect on the weld seam, matching the look and texture of image 2.
+Make it about ${size}% of the image width — clearly visible, like a real radiographic flaw. ${sev}${
+hint ? " " + hint.trim() : ""}
+
+Change nothing else: every pixel that is not the defect must stay identical to image 1 — same weld,
+same part, same background, same overall brightness. Only the small defect area may differ. Do not
+re-frame, re-render, zoom, or add any text, arrows, outlines or watermarks. Output the edited image
+at the same size as image 1.`;
 };
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
