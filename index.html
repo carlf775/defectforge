@@ -788,6 +788,13 @@ $("#fGood").onchange = async e => {
       }
     }catch(_){/* not a usable COCO json — ignore */}
   }
+  // remembered from a previous session: restore weld zones for images we've seen before
+  const restored = restoreZones();
+  if(!ztext && restored)
+    ztext = restored >= state.goods.length
+      ? ` · weld areas remembered from before ✓ (no need to draw again)`
+      : ` · weld areas remembered for ${restored}/${state.goods.length} image(s) — mark the rest`;
+  if(state.zones) persistZones();
   $("#goodInfo").textContent = r.text + ztext;
   ready();
 };
@@ -815,6 +822,29 @@ function zoneFor(name, w, h){
   const zone = pts.length ? {mask, pts, w, h} : null;
   zoneCache.set(key, zone);
   return zone;
+}
+// remember drawn/loaded weld zones per image (name+size), so re-uploading skips re-drawing
+const ZONE_STORE = "df_zones_v1";
+const zoneKey = f => `${f.name}|${f.size}`;
+function persistZones(){
+  try{
+    const store = JSON.parse(localStorage.getItem(ZONE_STORE) || "{}");
+    for(const f of state.goods)
+      if(state.zones && state.zones[f.name]) store[zoneKey(f)] = state.zones[f.name];
+    localStorage.setItem(ZONE_STORE, JSON.stringify(store));
+  }catch(_){}
+}
+function restoreZones(){
+  try{
+    const store = JSON.parse(localStorage.getItem(ZONE_STORE) || "{}");
+    const zones = state.zones ? {...state.zones} : {}; let n = 0;
+    for(const f of state.goods){
+      const z = store[zoneKey(f)];
+      if(z && !zones[f.name]){ zones[f.name] = z; n++; }
+    }
+    if(n){ state.zones = zones; zoneCache.clear(); }
+    return n;
+  }catch(_){ return 0; }
 }
 // crop-and-stitch: send Gemini only the weld, so it can't paint off it
 function cropRectOfZone(zone, pad){
@@ -1807,6 +1837,7 @@ async function finishZones(){
   const covered = Object.keys(zones).length;
   if(!covered){ $("#anno").classList.remove("on"); return; }
   state.zones = zones; zoneCache.clear();
+  persistZones();                                  // remember for next time these images are uploaded
   $("#anno").classList.remove("on");
   const r = fileReport(state.goods);
   $("#goodInfo").textContent = `${r.text} · weld areas marked on ${covered}/${state.goods.length} `
