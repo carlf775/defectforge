@@ -1373,7 +1373,7 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
-  const cropRect = zone ? cropRectOfZone(zone, 0.18) : null;         // send Gemini only the weld
+  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // full image + green weld outline
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1397,23 +1397,13 @@ async function generateOne(split, idx, weights, hint, tag){
     }else region = `${pick(rnd, CELLS)} area`;
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
-    const baseForEdit = zone ? cropRegion(cur, cropRect) : cur;      // the weld crop, or whole image
-    // size is % of the FULL frame; scale it up for the crop so the defect ends up the right size
-    const promptSize = zone ? Math.min(60, +(size * cur.width / cropRect.w).toFixed(1)) : size;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(baseForEdit, crop, ex.name, region, promptSize, SEV[sevKey], hint, null, !!zone); }
+      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
       catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
       let oc = canvasOf(out); out.close();
-      // stitch: paste the edited weld crop back into the full image
-      let full;
-      if(zone){
-        const ec = (oc.width!==cropRect.w || oc.height!==cropRect.h)
-                 ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
-        full = canvasOf(cur); full.getContext("2d").drawImage(ec, cropRect.x, cropRect.y);
-      }else{
-        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
-      }
+      const full = (oc.width!==cur.width || oc.height!==cur.height)
+                 ? resizeTo(oc, cur.width, cur.height) : oc;
       // measure the defect Gemini added (inside the weld mask)...
       const m = diffBBox(cur, full, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 5){
