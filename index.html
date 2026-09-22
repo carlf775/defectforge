@@ -579,7 +579,7 @@ hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in b
 Your task: add exactly ONE small, realistic "${cat}" defect onto image 1, matching the type, shape,
 appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
 flaw. ${weldCrop
-  ? `The whole of image 1 is the weld, so put the defect on the weld metal, roughly in the middle.`
+  ? `The whole of image 1 is the weld surface. Lay the defect on top of it, roughly in the middle, without changing the surrounding metal texture, grain or brightness.`
   : hasGuide
   ? `Place it well INSIDE the bright-green outline in image 3 (the weld); do not draw the green line itself.`
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
@@ -992,6 +992,23 @@ function cropRegion(canvas, r){
   const c=document.createElement("canvas"); c.width=r.w; c.height=r.h;
   c.getContext("2d").drawImage(canvas, r.x,r.y,r.w,r.h, 0,0,r.w,r.h);
   return c;
+}
+// paste the edited crop back into the original, feathering the rectangle edge so there's no hard box.
+// Everything outside the crop rectangle stays byte-for-byte the original image.
+function stitchCrop(base, editedCrop, rect, feather){
+  const w=base.width, h=base.height;
+  const bd = base.getContext("2d").getImageData(0,0,w,h);
+  const ed = editedCrop.getContext("2d").getImageData(0,0,rect.w,rect.h);
+  for(let ry=0; ry<rect.h; ry++) for(let rx=0; rx<rect.w; rx++){
+    const d = Math.min(rx, ry, rect.w-1-rx, rect.h-1-ry);   // distance to the nearest crop edge
+    const al = Math.max(0, Math.min(1, d/feather));         // 1 in the middle, fades to 0 at the edge
+    const bi = ((rect.y+ry)*w + (rect.x+rx))*4, ei = (ry*rect.w+rx)*4, ia = 1-al;
+    bd.data[bi]   = bd.data[bi]  *ia + ed.data[ei]  *al;
+    bd.data[bi+1] = bd.data[bi+1]*ia + ed.data[ei+1]*al;
+    bd.data[bi+2] = bd.data[bi+2]*ia + ed.data[ei+2]*al;
+  }
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").putImageData(bd,0,0); return c;
 }
 // keep base everywhere; take edited pixels only inside the weld mask (no rectangular seam)
 function maskCompositeFull(base, edited, mask){
@@ -1530,7 +1547,8 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
-  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // full image + green weld outline
+  // crop-and-stitch: Gemini only ever sees the weld region, so it can't touch the rest of the image
+  const cropRect = zone ? cropRectOfZone(zone, 0.4) : null;
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1554,10 +1572,18 @@ async function generateOne(split, idx, weights, hint, tag){
     }else region = `${pick(rnd, CELLS)} area`;
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
+    // build the weld crop, upscaled so the model has enough resolution to paint a clean defect
+    let sendImg = cur, up = 1, promptSize = size;
+    if(zone){
+      const baseCrop = cropRegion(cur, cropRect);
+      up = Math.max(1, Math.min(4, Math.round(768 / Math.max(cropRect.w, cropRect.h))));
+      sendImg = up > 1 ? resizeTo(baseCrop, cropRect.w*up, cropRect.h*up) : baseCrop;
+      promptSize = Math.min(40, +(size * cur.width / cropRect.w).toFixed(1));  // % of the crop
+    }
     let busyWaits = 0;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
+      try{ out = await edit(sendImg, crop, ex.name, region, promptSize, SEV[sevKey], hint, null, !!zone); }
       catch(e){
         // 503 overloaded / 429 rate-limit: back off hard and keep this attempt (don't burn a retry)
         const busy = /overloaded|UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|rate/i.test(e.message);
@@ -1567,9 +1593,16 @@ async function generateOne(split, idx, weights, hint, tag){
         log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue;
       }
       let oc = canvasOf(out); out.close();
-      const full = (oc.width!==cur.width || oc.height!==cur.height)
-                 ? resizeTo(oc, cur.width, cur.height) : oc;
-      // measure the defect Gemini added (inside the weld mask)...
+      // stitch Gemini's edited crop back into the ORIGINAL — the rest of the image can't change
+      let full;
+      if(zone){
+        const editedCrop = (oc.width!==cropRect.w || oc.height!==cropRect.h)
+                         ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
+        full = stitchCrop(cur, editedCrop, cropRect, Math.max(6, Math.round(Math.min(cropRect.w,cropRect.h)*0.12)));
+      }else{
+        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
+      }
+      // measure the defect (restricted to the weld mask, so the label sits on the weld)
       const m = diffBBox(cur, full, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 3){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
@@ -1577,8 +1610,6 @@ async function generateOne(split, idx, weights, hint, tag){
         continue;
       }
       if(m && plausible(m.box, cur.width, cur.height)){
-        // keep Gemini's actual edited image (the defect is really in the pixels); the weld-restricted
-        // diff is used only for the label, so the box/polygon stays on the weld
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
