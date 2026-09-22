@@ -688,13 +688,16 @@ function diffBBox(before, after, restrict){
 // overlay ONLY the detected defect onto the original — everything else stays pixel-identical,
 // with a feathered edge so the defect blends instead of looking pasted in
 function overlayDefect(base, edited, comp, w, h){
-  let a = new Float32Array(w*h);
-  for(let i=0;i<w*h;i++) a[i] = comp[i] ? 1 : 0;
-  a = boxBlur(a, w, h, 2); a = boxBlur(a, w, h, 2);   // soft edge
+  // soft halo ONLY outside the defect; the defect itself stays fully opaque so thin
+  // cracks/pores don't get washed out by the feather
+  let halo = new Float32Array(w*h);
+  for(let i=0;i<w*h;i++) halo[i] = comp[i] ? 1 : 0;
+  halo = boxBlur(halo, w, h, 1);
   const bd = base.getContext("2d").getImageData(0,0,w,h);
   const ed = edited.getContext("2d").getImageData(0,0,w,h);
   for(let i=0;i<w*h;i++){
-    const al = a[i]; if(al <= 0.003) continue;
+    const al = comp[i] ? 1 : halo[i];       // 1 inside the defect, feathered just outside it
+    if(al <= 0.02) continue;
     const j=i*4, ia=1-al;
     bd.data[j]  = bd.data[j]  *ia + ed.data[j]  *al;
     bd.data[j+1]= bd.data[j+1]*ia + ed.data[j+1]*al;
@@ -1412,12 +1415,12 @@ async function generateOne(split, idx, weights, hint, tag){
         continue;
       }
       if(m && plausible(m.box, cur.width, cur.height)){
-        // ...then overlay ONLY that defect onto the original — surface stays pixel-identical
-        const composite = overlayDefect(cur, full, m.comp, m.cw, m.ch);
+        // keep Gemini's actual edited image (the defect is really in the pixels); the weld-restricted
+        // diff is used only for the label, so the box/polygon stays on the weld
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
-        cur = composite; break;
+        cur = full; break;
       }
       log(`  · ${split} ${idx}: nothing usable landed on the weld, retrying`);
       await addRejectedCard(full, zone ? "nothing on the weld" : "no visible defect added", cur);
