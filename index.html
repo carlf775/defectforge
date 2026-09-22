@@ -257,6 +257,9 @@ header button.ghost{margin-left:auto;padding:6px 13px;font-size:12.5px;backgroun
   letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .card .meta{flex-wrap:wrap;row-gap:2px}
 .card .meta .m{width:100%;font-size:11px;opacity:.85;font-variant-numeric:tabular-nums}
+.card.rejected{opacity:.72;outline:1px solid color-mix(in srgb,var(--bad) 55%,transparent)}
+.card.rejected img{filter:grayscale(.15)}
+.card .tagline.bad{background:color-mix(in srgb,var(--bad) 82%,#000);color:#fff;border-color:transparent}
 #light,#anno{position:fixed;inset:0;z-index:110;background:rgba(24,26,28,.72);
   -webkit-backdrop-filter:blur(26px) saturate(1.2);backdrop-filter:blur(26px) saturate(1.2);
   display:none;flex-direction:column;padding:18px 20px 20px}
@@ -412,7 +415,7 @@ train a detector. Every label is measured from exactly what changed — never gu
 <section id="sX" hidden>
   <h2><i>3</i>Generate</h2>
   <div class="row">
-    <button id="try" disabled>Preview 3</button>
+    <button id="try" disabled>Preview 10</button>
     <button class="primary" id="go" disabled>Generate batch</button>
     <button id="stop" disabled>Stop</button>
     <button id="zip" disabled>Ship to training</button>
@@ -528,19 +531,24 @@ const PROMPT = (cat, region, size, sev, hint, hasGuide) =>
 Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.${
 hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
 
-Add exactly ONE realistic "${cat}" defect to image 1 — same type, appearance and texture as the
-real defect in image 2. ${hasGuide
-  ? `Place it clearly INSIDE the green outline from image 3 (that is the weld). Do NOT draw the green outline itself in your result.`
-  : `Place it in the ${region}.`} The defect should span roughly ${size}% of the image width. ${sev}${
+Your task: add exactly ONE realistic "${cat}" defect to image 1. It must clearly match the type,
+shape, appearance and texture of the real defect shown in image 2 — study image 2 and reproduce
+that same kind of flaw. ${hasGuide
+  ? `Place it well INSIDE the bright-green outline in image 3 — that outline marks the weld, and the defect must sit on the weld, not on the surrounding metal. Do NOT copy or draw the green outline itself; your output must contain no green line at all.`
+  : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-The defect MUST be visibly present — clearly darker or lighter than the metal around it, the way a
-real radiographic flaw looks. Do not return the image unchanged, and do not make it so faint it
-blends in.
+REQUIRED — the edit must be real and obvious:
+- The defect MUST be clearly visible, distinctly darker or lighter than the metal around it, exactly
+  as a genuine radiographic flaw appears. If in doubt, make it more visible, not less.
+- Do NOT return image 1 unchanged. Do NOT return a near-identical image. An unchanged image is a
+  failure.
+- Add ONLY the defect. Do not paint several; exactly one.
 
-Change nothing else: keep the same camera angle, framing, zoom, lighting, contrast, colours,
-background and resolution as image 1. Every pixel outside the added defect must stay identical.
-Do not restyle, clean up, or add any text, labels, arrows or watermarks.`;
+Keep everything else pixel-for-pixel identical to image 1 — same camera angle, framing, zoom,
+lighting, contrast, colours, background, grain and resolution. Every pixel outside the added defect
+must be unchanged. Do not restyle, denoise, sharpen, re-expose, crop, or add any text, labels,
+arrows, outlines or watermarks. Output only the edited image.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -963,7 +971,7 @@ function ready(){
   const n = (+$("#ntrain").value||0) + (+$("#nvalid").value||0);
   const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
   $("#estimate").textContent = `Batch: ${n} images · about ${Math.round(n*avg)} Gemini image calls.`
-    + ` Preview 3 first — it costs about ${Math.round(3*avg)} calls and tells you whether the rest is worth paying for.`;
+    + ` Preview 10 first — it costs about ${Math.round(10*avg)} calls and tells you whether the rest is worth paying for.`;
   nextStep();
 }
 
@@ -1037,8 +1045,8 @@ function nextStep(){
   const box = $("#guidebox");
   const step = GUIDE_STEPS.find(([need]) => need());
   const [, sel, html] = step || [null, "#try", () =>
-    `<b>Click Preview&nbsp;3.</b>
-     <div class="how">3 trial images before you pay for a full batch.</div>`];
+    `<b>Click Preview&nbsp;10.</b>
+     <div class="how">10 trial images before you pay for a full batch.</div>`];
   const rendered = html();
   if(box.__last !== rendered){
     box.__last = rendered;
@@ -1339,6 +1347,7 @@ async function generateOne(split, idx, weights, hint, tag){
           const cx = Math.min(zone.w-1, bx + (bw>>1)), cy = Math.min(zone.h-1, by + (bh>>1));
           if(!zone.mask[cy*zone.w + cx]){
             log(`  · ${split} ${idx}: defect landed off the weld zone, retrying`);
+            addRejectedCard(oc, "off the weld zone");
             continue;
           }
         }
@@ -1348,6 +1357,7 @@ async function generateOne(split, idx, weights, hint, tag){
         cur = oc; break;
       }
       log(`  · ${split} ${idx}: no usable change, retrying`);
+      addRejectedCard(oc, "no visible defect added");
     }
   }
   if(!boxes.length) return null;
@@ -1385,6 +1395,18 @@ function addCard(r){
     <span class="m">${m}</span></div><button class="x">drop</button>`;
   el.querySelector(".x").onclick = e => { e.stopPropagation(); drop(r); };
   el.querySelector("img").onclick = () => openLight(r);
+  $("#cards").prepend(el);
+}
+// every generated image is shown, even rejected ones — but rejects never enter the dataset
+function addRejectedCard(canvas, reason){
+  const s = Math.min(1, 420/canvas.width);
+  const c = resizeTo(canvas, Math.round(canvas.width*s), Math.round(canvas.height*s));
+  const src = c.toDataURL("image/jpeg", 0.8);
+  const el = document.createElement("div"); el.className = "card rejected";
+  el.innerHTML = `<img src="${src}">
+    <span class="tagline bad">rejected · ${reason}</span>
+    <div class="meta"><span>not added to dataset</span></div>`;
+  el.querySelector("img").onclick = () => showBig(src, `rejected · ${reason}`);
   $("#cards").prepend(el);
 }
 function drop(r){
@@ -1447,7 +1469,7 @@ $("#go").onclick = () => {
   run([...jobList(nTr, "train"), ...jobList(nVa, "valid"),
        ...(nTest ? jobList(nTest, "test") : [])], "");
 };
-$("#try").onclick = () => { computePools(); run(jobList(3, "train"), "preview"); };
+$("#try").onclick = () => { computePools(); run(jobList(10, "train"), "preview"); };
 $("#stop").onclick = () => { abort = true; log("stopping after in-flight requests…"); };
 
 /* ---------- export ---------- */
@@ -1841,7 +1863,7 @@ const TOUR = [
     "stuff: the kind inspectors get paid to catch. Below these sits a free-text box — anything "+
     "you type there is added to every prompt, like \"defects sit on the weld seam\"."},
  {sel:"#try", t:"Preview before you spend",
-  b:"<b>Preview 3</b> makes three images with your settings. That costs a few calls, not "+
+  b:"<b>Preview 10</b> makes ten images with your settings. That costs a few calls, not "+
     "hundreds. Look at them. Adjust. Preview again. Only then run the big batch."},
  {sel:"#estimate", t:"Size it",
   b:"Each defect is one Gemini call. So 200 images with 2 defects each is about 400 calls. "+
