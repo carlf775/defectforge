@@ -133,6 +133,27 @@ button:disabled{opacity:.4;cursor:not-allowed}
 .opt span{font-size:12px}
 .opt.drop{border-style:dashed;text-align:left}
 .opt a{color:color-mix(in srgb,var(--bad) 85%,var(--ink))}
+.opt.clean{border-color:color-mix(in srgb,var(--ok) 30%,transparent)}
+.opt.clean:hover{border-color:var(--ok)}
+.opt.clean a{color:color-mix(in srgb,var(--ok) 85%,var(--ink))}
+#partsmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);
+  display:grid;place-items:center;padding:24px}
+#partsmodal[hidden]{display:none}
+#partsmodal .libhead .sp{display:flex;gap:10px;align-items:center}
+#partsGrid{padding:16px 20px;display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:12px}
+.partcard{border:1px solid var(--line);border-radius:9px;overflow:hidden;cursor:pointer;position:relative;
+  background:rgba(255,255,255,.02)}
+.partcard.sel{outline:2px solid var(--ok);border-color:var(--ok)}
+.partcard img{width:100%;aspect-ratio:16/6;object-fit:cover;display:block;background:#111}
+.partcard .pn{font-size:10.5px;color:var(--muted);padding:5px 7px;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis}
+.partcard .zbadge{position:absolute;top:5px;left:5px;font:600 9.5px var(--display);
+  background:color-mix(in srgb,var(--ok) 80%,#000);color:#fff;padding:1px 6px;border-radius:999px}
+.partcard .del{position:absolute;top:5px;right:5px;background:rgba(0,0,0,.6);color:#fff;border:0;
+  border-radius:999px;width:20px;height:20px;cursor:pointer;font-size:12px;line-height:1}
+.partcard .tick{position:absolute;bottom:26px;right:6px;width:18px;height:18px;border-radius:4px;
+  background:var(--ok);color:var(--accent-ink);display:none;align-items:center;justify-content:center;font-size:12px}
+.partcard.sel .tick{display:flex}
 #libmodal{position:fixed;inset:0;z-index:200;background:rgba(0,0,0,.7);
   display:grid;place-items:center;padding:24px}
 #libmodal[hidden]{display:none}
@@ -345,10 +366,20 @@ train a detector. Every label is measured from exactly what changed — never gu
     </div>
     <div class="inzone clean">
       <span class="tag">✓ Your clean items</span>
-      <p class="sub">Defect-free photos of your own parts — defects get painted onto these.</p>
-      <div class="drop" id="dropGood"><b>Choose folder</b> ·
-        <a href="#" id="pickGoodFiles" onclick="event.stopPropagation()">pick files</a> ·
-        or drop them here</div>
+      <p class="sub">Defect-free photos of your own parts — defects get painted onto these.
+        Uploaded parts + their weld areas are saved so you can reuse them.</p>
+      <div class="opts">
+        <button type="button" class="opt clean" id="browseParts">
+          <b>Saved parts</b>
+          <span>Reuse parts you uploaded before, with weld areas <span id="partsState" class="note"></span></span>
+        </button>
+        <div class="opt drop clean" id="dropGood">
+          <b>Upload parts</b>
+          <span>A folder of clean images ·
+            <a href="#" id="pickGoodFiles" onclick="event.stopPropagation()">pick files</a> ·
+            or drop here</span>
+        </div>
+      </div>
       <input type="file" id="fGood" webkitdirectory directory multiple>
       <input type="file" id="fGoodF" accept="image/*,.json" multiple>
       <button type="button" class="markzone" id="markZones" hidden>✎ Mark the weld area
@@ -478,6 +509,17 @@ train a detector. Every label is measured from exactly what changed — never gu
   </div>
 </div>
 
+<div id="partsmodal" role="dialog" aria-modal="true" aria-label="Saved parts" hidden>
+  <div class="libpanel">
+    <div class="libhead">
+      <b>Saved parts</b>
+      <span class="sp"><button type="button" class="libuse" id="partsUse">Use selected</button>
+      <button type="button" id="partsClose" aria-label="close">✕</button></span>
+    </div>
+    <div id="partsGrid"><div class="note">Loading…</div></div>
+  </div>
+</div>
+
 <div id="light">
   <div class="top">
     <span class="who" id="lWho"></span><span class="m" id="lMeta"></span>
@@ -526,21 +568,32 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
-const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
-  const name = cat.replace(/_/g, " ");
-  return `You are editing image 1, an X-ray radiograph of a welded metal part. Do NOT create a new
-image — return image 1 itself, edited, with the SAME part, framing, zoom, background, brightness and
-resolution. Image 2 is a close-up of a real "${name}" defect for reference.
+const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) =>
+`You are producing training data for an automated visual defect-inspection system.
 
-Add exactly ONE realistic "${name}" defect on the weld seam, matching the look and texture of image 2.
-Make it about ${size}% of the image width — clearly visible, like a real radiographic flaw. ${sev}${
+Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Image 2: a close-up crop
+of a real "${cat}" defect from another item.${
+hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
+
+Your task: paint exactly ONE clearly visible "${cat}" defect onto image 1, matching the type, shape,
+appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
+flaw. ${weldCrop
+  ? `The whole of image 1 is the weld, so put the defect on the weld metal, roughly in the middle.`
+  : hasGuide
+  ? `Place it well INSIDE the bright-green outline in image 3 (the weld); do not draw the green line itself.`
+  : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-Change nothing else: every pixel that is not the defect must stay identical to image 1 — same weld,
-same part, same background, same overall brightness. Only the small defect area may differ. Do not
-re-frame, re-render, zoom, or add any text, arrows, outlines or watermarks. Output the edited image
-at the same size as image 1.`;
-};
+REQUIRED — the defect must be OBVIOUS:
+- It MUST be strongly visible: clearly darker or lighter than the metal around it, high contrast,
+  the way a real radiographic flaw stands out. Do not make it subtle. When unsure, make it stronger
+  and larger, never fainter.
+- Actually add it — do NOT return image 1 unchanged or nearly unchanged. A near-identical image is
+  a failure; the defect has to be plainly there.
+- Add ONLY this one defect and keep the overall brightness of the rest of the image the same (do not
+  brighten or darken the whole picture). Do not add any text, labels, arrows, outlines or watermarks.
+- Do NOT return an unchanged image, and do NOT add any text, labels, arrows, outlines or watermarks.
+Output only the edited image, same size as image 1.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -801,6 +854,7 @@ $("#fGood").onchange = async e => {
       : ` · weld areas remembered for ${restored}/${state.goods.length} image(s) — mark the rest`;
   if(state.zones) persistZones();
   $("#goodInfo").textContent = r.text + ztext;
+  saveCurrentParts();                              // keep these parts (+ zones) for reuse
   ready();
 };
 
@@ -850,6 +904,79 @@ function restoreZones(){
     if(n){ state.zones = zones; zoneCache.clear(); }
     return n;
   }catch(_){ return 0; }
+}
+// saved clean parts (images + weld zones) live in IndexedDB so they can be reused later
+const PARTS_DB = "df_parts_v1";
+function partsDB(){
+  return new Promise((res,rej)=>{
+    const r = indexedDB.open(PARTS_DB, 1);
+    r.onupgradeneeded = () => r.result.createObjectStore("parts", {keyPath:"key"});
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+async function savePart(file, zone){
+  try{ const db = await partsDB();
+    await new Promise((res,rej)=>{ const tx = db.transaction("parts","readwrite");
+      tx.objectStore("parts").put({key:zoneKey(file), name:file.name, size:file.size,
+        blob:file, zone:zone||null, at:Date.now()});
+      tx.oncomplete = res; tx.onerror = () => rej(tx.error); });
+  }catch(_){}
+}
+async function getAllParts(){
+  try{ const db = await partsDB();
+    return await new Promise((res,rej)=>{ const rq = db.transaction("parts").objectStore("parts").getAll();
+      rq.onsuccess = () => res(rq.result||[]); rq.onerror = () => rej(rq.error); });
+  }catch(_){ return []; }
+}
+async function deletePart(key){
+  try{ const db = await partsDB();
+    await new Promise(res=>{ const tx = db.transaction("parts","readwrite");
+      tx.objectStore("parts").delete(key); tx.oncomplete = res; tx.onerror = res; });
+  }catch(_){}
+}
+function saveCurrentParts(){                     // remember uploaded parts + their zones
+  for(const f of state.goods) savePart(f, state.zones && state.zones[f.name]);
+  refreshPartsBadge();
+}
+async function refreshPartsBadge(){
+  const n = (await getAllParts()).length;
+  $("#partsState").textContent = n ? `· ${n} saved` : "";
+}
+let partsSel = new Set();
+async function openPartsModal(){
+  const grid = $("#partsGrid"); $("#partsmodal").hidden = false; grid.innerHTML = "";
+  partsSel = new Set();
+  const parts = (await getAllParts()).sort((a,b)=>b.at-a.at);
+  if(!parts.length){ grid.innerHTML =
+    `<div class="note">No saved parts yet. Upload clean parts and they'll be kept here (with their weld areas) for next time.</div>`;
+    return; }
+  for(const p of parts){
+    const url = URL.createObjectURL(p.blob);
+    const card = document.createElement("div"); card.className = "partcard";
+    card.innerHTML = `<img src="${url}">${p.zone?'<span class="zbadge">weld ✓</span>':''}`
+      + `<button class="del" title="remove">✕</button><span class="tick">✓</span>`
+      + `<div class="pn">${p.name}</div>`;
+    card.onclick = e => {
+      if(e.target.classList.contains("del")) return;
+      card.classList.toggle("sel");
+      card.classList.contains("sel") ? partsSel.add(p.key) : partsSel.delete(p.key);
+    };
+    card.querySelector(".del").onclick = async e => { e.stopPropagation();
+      await deletePart(p.key); card.remove(); refreshPartsBadge(); };
+    grid.appendChild(card);
+  }
+}
+async function useSelectedParts(){
+  const parts = (await getAllParts()).filter(p => partsSel.has(p.key));
+  if(!parts.length){ $("#partsmodal").hidden = true; return; }
+  state.goods = parts.map(p => new File([p.blob], p.name, {type:p.blob.type||"image/png"}));
+  const zones = {}; let zc = 0;
+  for(const p of parts) if(p.zone){ zones[p.name] = p.zone; zc++; }
+  state.zones = zc ? zones : null; zoneCache.clear(); persistZones();
+  const r = fileReport(state.goods);
+  $("#goodInfo").textContent = r.text + (zc ? ` · weld areas loaded for ${zc}/${state.goods.length} part(s) ✓` : "");
+  $("#partsmodal").hidden = true;
+  ready();
 }
 // crop-and-stitch: send Gemini only the weld, so it can't paint off it
 function cropRectOfZone(zone, pad){
@@ -1288,6 +1415,11 @@ async function openLibModal(){
   }catch(e){ list.innerHTML = `<div class="note">Couldn't load: ${e.message}</div>`; }
 }
 $("#browseLib").onclick = openLibModal;
+$("#browseParts").onclick = openPartsModal;
+$("#partsClose").onclick = () => $("#partsmodal").hidden = true;
+$("#partsUse").onclick = useSelectedParts;
+$("#partsmodal").onclick = e => { if(e.target.id === "partsmodal") $("#partsmodal").hidden = true; };
+refreshPartsBadge();
 $("#libClose").onclick = () => $("#libmodal").hidden = true;
 $("#libmodal").onclick = e => { if(e.target.id === "libmodal") $("#libmodal").hidden = true; };
 // reflect "stored ✓" on the option button up front
@@ -1398,6 +1530,7 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
+  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // full image + green weld outline
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1424,7 +1557,7 @@ async function generateOne(split, idx, weights, hint, tag){
     let busyWaits = 0;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint); }
+      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
       catch(e){
         // 503 overloaded / 429 rate-limit: back off hard and keep this attempt (don't burn a retry)
         const busy = /overloaded|UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|rate/i.test(e.message);
@@ -1842,7 +1975,7 @@ async function finishZones(){
   const covered = Object.keys(zones).length;
   if(!covered){ $("#anno").classList.remove("on"); return; }
   state.zones = zones; zoneCache.clear();
-  persistZones();                                  // remember for next time these images are uploaded
+  persistZones(); saveCurrentParts();              // remember zones for next time these images are used
   $("#anno").classList.remove("on");
   const r = fileReport(state.goods);
   $("#goodInfo").textContent = `${r.text} · weld areas marked on ${covered}/${state.goods.length} `
