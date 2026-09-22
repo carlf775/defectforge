@@ -533,25 +533,23 @@ Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Imag
 of a real "${cat}" defect from another item.${
 hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
 
-Your task: add exactly ONE realistic "${cat}" defect to image 1. It must clearly match the type,
-shape, appearance and texture of the real defect shown in image 2 — study image 2 and reproduce
-that same kind of flaw. ${weldCrop
-  ? `The whole of image 1 is the weld, so place the defect on the weld metal, roughly in the middle.`
+Your task: paint exactly ONE clearly visible "${cat}" defect onto image 1, matching the type, shape,
+appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
+flaw. ${weldCrop
+  ? `The whole of image 1 is the weld, so put the defect on the weld metal, roughly in the middle.`
   : hasGuide
-  ? `Place it well INSIDE the bright-green outline in image 3 — that outline marks the weld, and the defect must sit on the weld, not on the surrounding metal. Do NOT copy or draw the green outline itself; your output must contain no green line at all.`
+  ? `Place it well INSIDE the bright-green outline in image 3 (the weld); do not draw the green line itself.`
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-Think of it as painting ONE small defect on top of image 1 and returning image 1 otherwise
-completely untouched — like a transparent overlay that only covers the defect.
-
-REQUIRED:
-- Add exactly ONE "${cat}" defect. It must be clearly visible — distinctly darker or lighter than
-  the metal around it, exactly as a genuine radiographic flaw looks. If in doubt, more visible.
-- Do NOT redraw, regenerate, restyle, denoise, sharpen or re-expose the surface. Keep the EXACT
-  same metal texture, grain, noise, brightness and contrast as image 1 everywhere.
-- Every pixel that is not the defect itself must be byte-for-byte identical to image 1. Only the
-  small defect region may differ.
+REQUIRED — the defect must be OBVIOUS:
+- It MUST be strongly visible: clearly darker or lighter than the metal around it, high contrast,
+  the way a real radiographic flaw stands out. Do not make it subtle. When unsure, make it stronger
+  and larger, never fainter.
+- Actually add it — do NOT return image 1 unchanged or nearly unchanged. A near-identical image is
+  a failure; the defect has to be plainly there.
+- Add ONLY this one defect and keep the overall brightness of the rest of the image the same (do not
+  brighten or darken the whole picture). Do not add any text, labels, arrows, outlines or watermarks.
 - Do NOT return an unchanged image, and do NOT add any text, labels, arrows, outlines or watermarks.
 Output only the edited image, same size as image 1.`;
 
@@ -1418,6 +1416,11 @@ async function generateOne(split, idx, weights, hint, tag){
       }
       // measure the defect Gemini added (inside the weld mask)...
       const m = diffBBox(cur, full, zone ? zone.mask : null);
+      if(m && plausible(m.box, cur.width, cur.height) && m.strength < 5){
+        log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
+        await addRejectedCard(full, `too faint (contrast ${m.strength})`, cur);
+        continue;
+      }
       if(m && plausible(m.box, cur.width, cur.height)){
         // ...then overlay ONLY that defect onto the original — surface stays pixel-identical
         const composite = overlayDefect(cur, full, m.comp, m.cw, m.ch);
