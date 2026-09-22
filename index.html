@@ -511,16 +511,17 @@ const CELLS = ["top-left","top-center","top-right","middle-left","center","middl
                "bottom-left","bottom-center","bottom-right"];
 const IMG_RE = /\.(jpe?g|png|bmp|webp)$/i;
 
-const SIZES = {hairline:[1,4], small:[3,8], medium:[7,15], large:[14,28], mixed:[2,25]};
+// weld defects are tiny relative to the frame — every size stays under 5% of the width
+const SIZES = {hairline:[0.5,1.5], small:[1,2.5], medium:[2,3.5], large:[3,5], mixed:[0.5,5]};
 const SEV = {
   faint:"Keep it subtle and low-contrast — the kind of fault an inspector could miss at a glance, "+
         "barely standing out from the surrounding surface.",
   moderate:"Make it clearly visible but not dramatic, typical of everyday production faults.",
   severe:"Make it pronounced and unmistakable: deep, high-contrast, obvious damage."};
-const SIZE_HINT = {hairline:"1–4% of the frame. Hardest class to detect, and the one real "+
-  "inspection usually cares about.", small:"3–8%. A good default for surface faults.",
-  medium:"7–15%. Comfortably visible at a glance.", large:"14–28%. Gross damage.",
-  mixed:"2–25%, redrawn per defect. Widest coverage — best unless you know your defect scale."};
+const SIZE_HINT = {hairline:"0.5–1.5% of the width. The hard cases real inspection cares about.",
+  small:"1–2.5%. A good default for weld porosity and small cracks.",
+  medium:"2–3.5%. Comfortably visible.", large:"3–5%. The upper end for a weld flaw.",
+  mixed:"0.5–5%, redrawn per defect. Widest realistic coverage — best unless you know your scale."};
 const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually fail on.",
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
@@ -615,19 +616,23 @@ function tracePoly(comp, w, h){          // Moore boundary trace of one connecte
   return out.length >= 3 ? out : pts;
 }
 
-function diffBBox(before, after){
+function diffBBox(before, after, restrict){
   if(before.width!==after.width || before.height!==after.height) return null;
   const s = 1;                                // full resolution: masks are pixel-exact
   const A = imageDataAt(before,s), B = imageDataAt(after,s);
   const w=A.width, h=A.height, n=w*h, d=new Uint8Array(n);
+  // restrict measurement to the weld mask: pixels outside it can never become a defect
+  const inMask = restrict && restrict.length === n ? restrict : null;
   let max=0;
   for(let i=0;i<n;i++){
     const j=i*4;
     const ga=(A.data[j]*299+A.data[j+1]*587+A.data[j+2]*114)/1000;
     const gb=(B.data[j]*299+B.data[j+1]*587+B.data[j+2]*114)/1000;
-    const v=Math.abs(ga-gb)|0; d[i]=v; if(v>max) max=v;
+    let v=Math.abs(ga-gb)|0;
+    if(inMask && !inMask[i]) v = 0;               // outside the weld can never count as a defect
+    d[i]=v; if(v>max) max=v;
   }
-  if(max < 12) return null;                       // nothing changed
+  if(max < 12) return null;                       // nothing changed inside the weld
   const thr = Math.max(12, max*0.4);
   let m = new Uint8Array(n);
   for(let i=0;i<n;i++) m[i] = d[i]>=thr ? 1 : 0;
@@ -1332,7 +1337,7 @@ async function generateOne(split, idx, weights, hint, tag){
                          + Math.min(2, Math.floor(tx*3/zone.w))];
       region = `${cell} area, directly on the weld seam`;
     }else region = `${pick(rnd, CELLS)} area`;
-    const size = randint(rnd, lo, hi);
+    const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
     for(let att=0; att<=retries && !abort; att++){
       let out;
@@ -1340,24 +1345,16 @@ async function generateOne(split, idx, weights, hint, tag){
       catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
       let oc = canvasOf(out); out.close();
       if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
-      const m = diffBBox(cur, oc);
+      // measurement is confined to the weld mask, so a kept defect is guaranteed inside it
+      const m = diffBBox(cur, oc, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height)){
-        if(zone){
-          const [bx,by,bw,bh] = m.box;
-          const cx = Math.min(zone.w-1, bx + (bw>>1)), cy = Math.min(zone.h-1, by + (bh>>1));
-          if(!zone.mask[cy*zone.w + cx]){
-            log(`  · ${split} ${idx}: defect landed off the weld zone, retrying`);
-            addRejectedCard(oc, "off the weld zone");
-            continue;
-          }
-        }
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
         cur = oc; break;
       }
-      log(`  · ${split} ${idx}: no usable change, retrying`);
-      addRejectedCard(oc, "no visible defect added");
+      log(`  · ${split} ${idx}: nothing usable landed on the weld, retrying`);
+      await addRejectedCard(oc, zone ? "nothing on the weld" : "no visible defect added", cur);
     }
   }
   if(!boxes.length) return null;
@@ -1398,15 +1395,19 @@ function addCard(r){
   $("#cards").prepend(el);
 }
 // every generated image is shown, even rejected ones — but rejects never enter the dataset
-function addRejectedCard(canvas, reason){
+async function addRejectedCard(canvas, reason, baseCanvas){
   const s = Math.min(1, 420/canvas.width);
   const c = resizeTo(canvas, Math.round(canvas.width*s), Math.round(canvas.height*s));
   const src = c.toDataURL("image/jpeg", 0.8);
+  // full result-shaped object so it opens in the SAME large lightbox as accepted images
+  const r = { rejected:true, rejReason:reason, split:"rejected", w:canvas.width, h:canvas.height,
+              boxes:[], blob: await toBlob(canvas),
+              baseBlob: await toBlob(baseCanvas || canvas) };
   const el = document.createElement("div"); el.className = "card rejected";
   el.innerHTML = `<img src="${src}">
     <span class="tagline bad">rejected · ${reason}</span>
-    <div class="meta"><span>not added to dataset</span></div>`;
-  el.querySelector("img").onclick = () => showBig(src, `rejected · ${reason}`);
+    <div class="meta"><span>not added to dataset · click to enlarge</span></div>`;
+  el.querySelector("img").onclick = () => openLight(r);
   $("#cards").prepend(el);
 }
 function drop(r){
@@ -1791,9 +1792,12 @@ function openLight(r){
   lightURLs = [edit, base];
   const img = $("#lImg");
   img.src = edit; img.dataset.edit = edit; img.dataset.base = base;
-  $("#lWho").textContent = r.boxes.map(b=>b.name).join(", ");
-  $("#lMeta").textContent = `${r.split} · ${r.w}×${r.h} · ` +
-    r.boxes.map(b => `${b.pct}% wide · ${b.sev} · contrast ${b.strength}`).join(" | ");
+  $("#lWho").textContent = r.rejected ? "REJECTED" : r.boxes.map(b=>b.name).join(", ");
+  $("#lMeta").textContent = r.rejected
+    ? `${r.rejReason} · not in dataset · ${r.w}×${r.h} · hold to see the original`
+    : `${r.split} · ${r.w}×${r.h} · ` +
+      r.boxes.map(b => `${b.pct}% wide · ${b.sev} · contrast ${b.strength}`).join(" | ");
+  $("#lDrop").style.display = r.rejected ? "none" : "";
   img.onload = () => {
     const ov = $("#lOv");
     ov.setAttribute("viewBox", `0 0 ${r.w} ${r.h}`);
@@ -1813,7 +1817,7 @@ function openLight(r){
 function closeLight(){ light.classList.remove("on");
   lightURLs.forEach(URL.revokeObjectURL); lightURLs = []; lightR = null; }
 function lightStep(d){
-  if(!lightR) return;
+  if(!lightR || lightR.rejected) return;         // rejected previews aren't part of the dataset list
   const i = state.results.indexOf(lightR), n = state.results.length;
   if(n) openLight(state.results[(i + d + n) % n]);
 }
