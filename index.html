@@ -526,15 +526,18 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
-const PROMPT = (cat, region, size, sev, hint, hasGuide) =>
+const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) =>
 `You are producing training data for an automated visual defect-inspection system.
 
-Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.${
+Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Image 2: a close-up crop
+of a real "${cat}" defect from another item.${
 hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
 
 Your task: add exactly ONE realistic "${cat}" defect to image 1. It must clearly match the type,
 shape, appearance and texture of the real defect shown in image 2 — study image 2 and reproduce
-that same kind of flaw. ${hasGuide
+that same kind of flaw. ${weldCrop
+  ? `The whole of image 1 is the weld, so place the defect on the weld metal, roughly in the middle.`
+  : hasGuide
   ? `Place it well INSIDE the bright-green outline in image 3 — that outline marks the weld, and the defect must sit on the weld, not on the surrounding metal. Do NOT copy or draw the green outline itself; your output must contain no green line at all.`
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
@@ -795,6 +798,31 @@ function zoneFor(name, w, h){
   const zone = pts.length ? {mask, pts, w, h} : null;
   zoneCache.set(key, zone);
   return zone;
+}
+// crop-and-stitch: send Gemini only the weld, so it can't paint off it
+function cropRectOfZone(zone, pad){
+  let x0=zone.w, y0=zone.h, x1=0, y1=0;
+  for(const i of zone.pts){ const x=i%zone.w, y=(i/zone.w)|0;
+    if(x<x0)x0=x; if(x>x1)x1=x; if(y<y0)y0=y; if(y>y1)y1=y; }
+  const bw=x1-x0+1, bh=y1-y0+1, px=Math.round(bw*pad), py=Math.round(bh*pad);
+  x0=Math.max(0,x0-px); y0=Math.max(0,y0-py);
+  x1=Math.min(zone.w-1,x1+px); y1=Math.min(zone.h-1,y1+py);
+  return {x:x0, y:y0, w:x1-x0+1, h:y1-y0+1};
+}
+function cropRegion(canvas, r){
+  const c=document.createElement("canvas"); c.width=r.w; c.height=r.h;
+  c.getContext("2d").drawImage(canvas, r.x,r.y,r.w,r.h, 0,0,r.w,r.h);
+  return c;
+}
+// keep base everywhere; take edited pixels only inside the weld mask (no rectangular seam)
+function maskCompositeFull(base, edited, mask){
+  const w=base.width, h=base.height;
+  const bd=base.getContext("2d").getImageData(0,0,w,h);
+  const ed=edited.getContext("2d").getImageData(0,0,w,h);
+  for(let i=0;i<w*h;i++) if(mask[i]){ const j=i*4;
+    bd.data[j]=ed.data[j]; bd.data[j+1]=ed.data[j+1]; bd.data[j+2]=ed.data[j+2]; }
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").putImageData(bd,0,0); return c;
 }
 // a copy of the base with the weld zone outlined in bright green — Gemini's placement guide
 function guideCanvasFor(name, baseCanvas){
@@ -1243,12 +1271,12 @@ async function cropCanvas(ex, pad=0.35){
 }
 
 /* ---------- gemini ---------- */
-async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint, guideCanvas){
+async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint, guideCanvas, weldCrop){
   const blobs = [toBlob(baseCanvas), toBlob(cropCanvasEl)];
   if(guideCanvas) blobs.push(toBlob(guideCanvas));
   const datas = await Promise.all((await Promise.all(blobs)).map(toB64));
   const model = $("#model").value;
-  const parts = [{text: PROMPT(cat, region, size, sev, hint, !!guideCanvas)}];
+  const parts = [{text: PROMPT(cat, region, size, sev, hint, !!guideCanvas, weldCrop)}];
   for(const d of datas) parts.push({inlineData:{mimeType:"image/jpeg", data:d}});
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
     method:"POST",
@@ -1315,7 +1343,7 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
-  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // shows Gemini where the weld is
+  const cropRect = zone ? cropRectOfZone(zone, 0.18) : null;         // send Gemini only the weld
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1339,22 +1367,34 @@ async function generateOne(split, idx, weights, hint, tag){
     }else region = `${pick(rnd, CELLS)} area`;
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
+    const baseForEdit = zone ? cropRegion(cur, cropRect) : cur;      // the weld crop, or whole image
+    // size is % of the FULL frame; scale it up for the crop so the defect ends up the right size
+    const promptSize = zone ? Math.min(60, +(size * cur.width / cropRect.w).toFixed(1)) : size;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
+      try{ out = await edit(baseForEdit, crop, ex.name, region, promptSize, SEV[sevKey], hint, null, !!zone); }
       catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
       let oc = canvasOf(out); out.close();
-      if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
-      // measurement is confined to the weld mask, so a kept defect is guaranteed inside it
-      const m = diffBBox(cur, oc, zone ? zone.mask : null);
+      // stitch: paste the edited weld crop back into the full image
+      let full;
+      if(zone){
+        const ec = (oc.width!==cropRect.w || oc.height!==cropRect.h)
+                 ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
+        full = canvasOf(cur); full.getContext("2d").drawImage(ec, cropRect.x, cropRect.y);
+      }else{
+        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
+      }
+      // apply only the weld-mask pixels (no crop-rectangle seam), then measure inside the mask
+      const stitched = zone ? maskCompositeFull(cur, full, zone.mask) : full;
+      const m = diffBBox(cur, stitched, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height)){
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
-        cur = oc; break;
+        cur = stitched; break;
       }
       log(`  · ${split} ${idx}: nothing usable landed on the weld, retrying`);
-      await addRejectedCard(oc, zone ? "nothing on the weld" : "no visible defect added", cur);
+      await addRejectedCard(full, zone ? "nothing on the weld" : "no visible defect added", cur);
     }
   }
   if(!boxes.length) return null;
