@@ -412,17 +412,17 @@ train a detector. Every label is measured from exactly what changed — never gu
     <div>
       <label>Defect size — how much of the frame one defect covers</label>
       <div class="seg" id="segSize">
-        <button data-v="hairline">Hairline</button><button data-v="small">Small</button>
+        <button data-v="hairline">Hairline</button><button data-v="small" class="on">Small</button>
         <button data-v="medium">Medium</button><button data-v="large">Large</button>
-        <button data-v="mixed" class="on">Mixed</button>
+        <button data-v="mixed">Mixed</button>
       </div>
       <div class="seghint" id="hintSize"></div>
     </div>
     <div>
       <label>Severity — how pronounced it looks</label>
       <div class="seg" id="segSev">
-        <button data-v="faint">Faint</button><button data-v="moderate">Moderate</button>
-        <button data-v="severe">Severe</button><button data-v="mixed" class="on">Mixed</button>
+        <button data-v="faint" class="on">Faint</button><button data-v="moderate">Moderate</button>
+        <button data-v="severe">Severe</button><button data-v="mixed">Mixed</button>
       </div>
       <div class="seghint" id="hintSev"></div>
     </div>
@@ -556,10 +556,11 @@ const IMG_RE = /\.(jpe?g|png|bmp|webp)$/i;
 // weld defects are tiny relative to the frame — every size stays under 5% of the width
 const SIZES = {hairline:[0.5,1.5], small:[1,2.5], medium:[2,3.5], large:[3,5], mixed:[0.5,5]};
 const SEV = {
-  faint:"Keep it subtle and low-contrast — the kind of fault an inspector could miss at a glance, "+
-        "barely standing out from the surrounding surface.",
-  moderate:"Make it clearly visible but not dramatic, typical of everyday production faults.",
-  severe:"Make it pronounced and unmistakable: deep, high-contrast, obvious damage."};
+  faint:"Keep it very subtle and low-contrast — the kind of fault an inspector could miss at a "+
+        "glance, only barely standing out from the surrounding metal.",
+  moderate:"Keep it subtle but noticeable on close look — a small low-contrast variation, not dramatic.",
+  severe:"Make it noticeable but still realistic — a clear but modest local variation, never a bold "+
+         "black blob or dramatic mark."};
 const SIZE_HINT = {hairline:"0.5–1.5% of the width. The hard cases real inspection cares about.",
   small:"1–2.5%. A good default for weld porosity and small cracks.",
   medium:"2–3.5%. Comfortably visible.", large:"3–5%. The upper end for a weld flaw.",
@@ -575,7 +576,7 @@ Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Imag
 of a real "${cat}" defect from another item.${
 hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
 
-Your task: paint exactly ONE clearly visible "${cat}" defect onto image 1, matching the type, shape,
+Your task: add exactly ONE small, realistic "${cat}" defect onto image 1, matching the type, shape,
 appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
 flaw. ${weldCrop
   ? `The whole of image 1 is the weld, so put the defect on the weld metal, roughly in the middle.`
@@ -584,16 +585,15 @@ flaw. ${weldCrop
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-REQUIRED — the defect must be OBVIOUS:
-- It MUST be strongly visible: clearly darker or lighter than the metal around it, high contrast,
-  the way a real radiographic flaw stands out. Do not make it subtle. When unsure, make it stronger
-  and larger, never fainter.
-- Actually add it — do NOT return image 1 unchanged or nearly unchanged. A near-identical image is
-  a failure; the defect has to be plainly there.
-- Add ONLY this one defect and keep the overall brightness of the rest of the image the same (do not
-  brighten or darken the whole picture). Do not add any text, labels, arrows, outlines or watermarks.
-- Do NOT return an unchanged image, and do NOT add any text, labels, arrows, outlines or watermarks.
-Output only the edited image, same size as image 1.`;
+Keep it subtle and true to life: a genuine radiographic flaw is a small, low-contrast local variation
+in the metal, NOT a bold black blob or dramatic mark. Slightly visible is correct; exaggerated is wrong.
+
+Most important — do not change the picture itself:
+- Return image 1 exactly as it is, with only the small defect added. Do NOT regenerate, redraw,
+  re-frame, zoom, or change the part, the background, the framing, the brightness or the resolution.
+- Every pixel that is not the defect must stay identical to image 1. Only a small area may differ.
+- Do not add any text, labels, arrows, outlines or watermarks. Output the edited image at the same
+  size as image 1.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -1571,7 +1571,7 @@ async function generateOne(split, idx, weights, hint, tag){
                  ? resizeTo(oc, cur.width, cur.height) : oc;
       // measure the defect Gemini added (inside the weld mask)...
       const m = diffBBox(cur, full, zone ? zone.mask : null);
-      if(m && plausible(m.box, cur.width, cur.height) && m.strength < 5){
+      if(m && plausible(m.box, cur.width, cur.height) && m.strength < 3){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
         await addRejectedCard(full, `too faint (contrast ${m.strength})`, cur);
         continue;
