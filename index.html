@@ -371,7 +371,7 @@ train a detector. Every label is measured from exactly what changed — never gu
   </div>
   <div class="grid g3" style="margin-top:14px">
     <div><label for="conc">parallel requests</label><input id="conc" type="number" value="4" min="1" max="12"></div>
-    <div><label for="retries">retries per defect</label><input id="retries" type="number" value="2" min="0" max="5"></div>
+    <div><label for="retries">retries per defect</label><input id="retries" type="number" value="4" min="0" max="8"></div>
     <div><label for="seed">seed</label><input id="seed" type="number" value="1"></div>
   </div>
   <div class="grid g2" style="margin-top:18px">
@@ -522,18 +522,25 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
-const PROMPT = (cat, region, size, sev, hint) =>
+const PROMPT = (cat, region, size, sev, hint, hasGuide) =>
 `You are producing training data for an automated visual defect-inspection system.
 
-Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.
+Image 1: a defect-free item. Image 2: a close-up crop of a real "${cat}" defect from another item.${
+hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
 
-Edit image 1 so the item has exactly one realistic "${cat}" defect of the same type, appearance and
-texture as image 2, in the ${region} of the item. The defect should span roughly ${size}% of the
-image width. ${sev}${hint ? " " + hint.trim() : ""}
+Add exactly ONE realistic "${cat}" defect to image 1 — same type, appearance and texture as the
+real defect in image 2. ${hasGuide
+  ? `Place it clearly INSIDE the green outline from image 3 (that is the weld). Do NOT draw the green outline itself in your result.`
+  : `Place it in the ${region}.`} The defect should span roughly ${size}% of the image width. ${sev}${
+hint ? " " + hint.trim() : ""}
 
-Critical: change nothing else. Same camera angle, framing, crop, zoom, lighting, white balance,
-colours, background and resolution as image 1. Every pixel outside the defect must stay identical.
-Do not restyle, do not clean up, do not add text, labels, arrows or watermarks.`;
+The defect MUST be visibly present — clearly darker or lighter than the metal around it, the way a
+real radiographic flaw looks. Do not return the image unchanged, and do not make it so faint it
+blends in.
+
+Change nothing else: keep the same camera angle, framing, zoom, lighting, contrast, colours,
+background and resolution as image 1. Every pixel outside the added defect must stay identical.
+Do not restyle, clean up, or add any text, labels, arrows or watermarks.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -775,6 +782,20 @@ function zoneFor(name, w, h){
   const zone = pts.length ? {mask, pts, w, h} : null;
   zoneCache.set(key, zone);
   return zone;
+}
+// a copy of the base with the weld zone outlined in bright green — Gemini's placement guide
+function guideCanvasFor(name, baseCanvas){
+  const z = state.zones && state.zones[name]; if(!z) return null;
+  const c = canvasOf(baseCanvas), x = c.getContext("2d");
+  const sx = c.width / z.size[0], sy = c.height / z.size[1];
+  x.strokeStyle = "#00ff66"; x.lineWidth = Math.max(3, Math.round(c.width/300));
+  x.lineJoin = "round";
+  for(const p of z.polys){
+    x.beginPath(); x.moveTo(p[0]*sx, p[1]*sy);
+    for(let i = 2; i < p.length; i += 2) x.lineTo(p[i]*sx, p[i+1]*sy);
+    x.closePath(); x.stroke();
+  }
+  return c;
 }
 
 $("#fAnn").onchange = async e => {
@@ -1209,17 +1230,17 @@ async function cropCanvas(ex, pad=0.35){
 }
 
 /* ---------- gemini ---------- */
-async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint){
-  const [b1,b2] = await Promise.all([toBlob(baseCanvas), toBlob(cropCanvasEl)]);
-  const [d1,d2] = await Promise.all([toB64(b1), toB64(b2)]);
+async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint, guideCanvas){
+  const blobs = [toBlob(baseCanvas), toBlob(cropCanvasEl)];
+  if(guideCanvas) blobs.push(toBlob(guideCanvas));
+  const datas = await Promise.all((await Promise.all(blobs)).map(toB64));
   const model = $("#model").value;
+  const parts = [{text: PROMPT(cat, region, size, sev, hint, !!guideCanvas)}];
+  for(const d of datas) parts.push({inlineData:{mimeType:"image/jpeg", data:d}});
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
     method:"POST",
     headers:{"Content-Type":"application/json","x-goog-api-key":$("#key").value.trim()},
-    body: JSON.stringify({contents:[{parts:[
-      {text: PROMPT(cat, region, size, sev, hint)},
-      {inlineData:{mimeType:"image/jpeg", data:d1}},
-      {inlineData:{mimeType:"image/jpeg", data:d2}}]}]})
+    body: JSON.stringify({contents:[{parts}]})
   });
   const j = await r.json();
   if(!r.ok){ state.lastApiError = j.error?.message || `HTTP ${r.status}`;
@@ -1281,6 +1302,7 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
+  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // shows Gemini where the weld is
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1306,7 +1328,7 @@ async function generateOne(split, idx, weights, hint, tag){
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint); }
+      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
       catch(e){ log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue; }
       let oc = canvasOf(out); out.close();
       if(oc.width!==cur.width || oc.height!==cur.height) oc = resizeTo(oc, cur.width, cur.height);
