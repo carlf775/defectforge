@@ -1608,34 +1608,17 @@ async function generateOne(split, idx, weights, hint, tag){
         log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue;
       }
       let oc = canvasOf(out); out.close();
-
+      // stitch the edited crop back into the original at the exact same spot
+      let full;
       if(zone){
-        // find the defect Gemini added WITHIN the crop (original crop vs edited crop)
         const editedCrop = (oc.width!==cropRect.w || oc.height!==cropRect.h)
                          ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
-        const cm = diffBBox(baseCrop, editedCrop);
-        const tooBig = cm && (cm.box[2]*cm.box[3]) > 0.6*cropRect.w*cropRect.h;  // whole-crop restyle
-        if(cm && !tooBig && cm.strength < 2){
-          log(`  · ${split} ${idx}: defect too faint (contrast ${cm.strength}), retrying`);
-          await addRejectedCard(editedCrop, `too faint (contrast ${cm.strength})`, baseCrop);
-          continue;
-        }
-        if(cm && !tooBig){
-          // apply ONLY that defect onto the untouched original → perfect mask, no seam
-          const composite = applyCropDefect(cur, editedCrop, cropRect, cm.comp);
-          const box = [cropRect.x+cm.box[0], cropRect.y+cm.box[1], cm.box[2], cm.box[3]];
-          const poly = cm.poly.map(([x,y]) => [x+cropRect.x, y+cropRect.y]);
-          boxes.push({cat:ex.cat, name:ex.name, box, poly, maskArea:cm.maskArea,
-                      sev:sevKey, strength:cm.strength, pct:+(cm.box[2]/cur.width*100).toFixed(1)});
-          cur = composite; break;
-        }
-        log(`  · ${split} ${idx}: ${tooBig?"whole crop changed":"no visible defect"}, retrying`);
-        await addRejectedCard(editedCrop, tooBig?"whole crop changed — retrying":"no visible defect", baseCrop);
-        continue;
+        full = stitchCrop(cur, editedCrop, cropRect,
+                          Math.max(4, Math.round(Math.min(cropRect.w, cropRect.h)*0.1)));
+      }else{
+        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
       }
-
-      // no weld zone marked: fall back to full-image diff
-      const full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
+      // mask = pixel difference between the original and the stitched image
       const m = diffBBox(cur, full);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 2){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
