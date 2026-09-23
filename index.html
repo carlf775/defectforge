@@ -532,7 +532,7 @@ train a detector. Every label is measured from exactly what changed — never gu
   <div class="stage"><div class="frame"><img id="lImg">
     <svg id="lOv" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none"></svg>
   </div></div>
-  <div class="hint">hold <b>space</b> or press-and-hold the image to see the original ·
+  <div class="hint">hold <b>space</b> or press-and-hold to hide the mask (see the defect only) ·
     ←/→ next · <b>x</b> drop · esc close</div>
 </div>
 
@@ -568,30 +568,18 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
-const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) =>
-`You are producing training data for an automated visual defect-inspection system.
-
-Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Image 2: a close-up crop
-of a real "${cat}" defect from another item.${
-hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
-
-Your task: paint exactly ONE clearly visible "${cat}" defect onto image 1, matching the type, shape,
-appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
-flaw. ${weldCrop
-  ? `The whole of image 1 is the weld, so put the defect on the weld metal, roughly in the middle.`
-  : hasGuide
-  ? `Place it well INSIDE the bright-green outline in image 3 (the weld); do not draw the green line itself.`
-  : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
-hint ? " " + hint.trim() : ""}
-
-REQUIRED — keep the defect VERY FAINT:
-- Make it extremely subtle and low-contrast — only just barely visible, the kind of flaw an inspector
-  would easily miss at a glance. Far fainter than you would normally draw. NOT a bold, dark or
-  high-contrast mark. When unsure, make it fainter, never stronger.
-- Still actually add it: a tiny, faint local variation must be present — but only just.
-- Add ONLY this one defect and keep the overall brightness of the rest of the image the same (do not
-  brighten or darken the whole picture). Do not add any text, labels, arrows, outlines or watermarks.
-Output only the edited image, same size as image 1.`;
+const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
+  const name = cat.replace(/_/g, " ");
+  return `This is an X-ray radiograph of a welded metal part. On the weld seam, add exactly one small, `
+    + `realistic ${name} defect — the kind that shows up in a real radiograph of a weld. Put it clearly `
+    + `on the weld seam itself, not on the surrounding metal.\n\n`
+    + `Keep it VERY faint: extremely subtle and low-contrast, only just barely visible — the kind an `
+    + `inspector could easily miss. ${sev}${hint ? " " + hint.trim() : ""} When unsure, make it fainter, `
+    + `never stronger; a small, faint local variation, not a bold or dark mark.\n\n`
+    + `Do not change anything else: return this exact same image — same part, framing, background, `
+    + `brightness and resolution — with only the small defect added on the weld. Do not regenerate or `
+    + `redraw the rest, and do not add any text, arrows, outlines or watermarks.`;
+};
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -678,7 +666,7 @@ function diffBBox(before, after, restrict){
   const thr = Math.max(12, max*0.4);
   let m = new Uint8Array(n);
   for(let i=0;i<n;i++) m[i] = d[i]>=thr ? 1 : 0;
-  m = morph(morph(m,w,h,9),w,h,1);                // opening: kill speckle + recompression noise
+  m = morph(morph(m,w,h,2),w,h,2);                // gentle opening: kill 1-2px speckle, keep the true shape
   // largest connected component
   const seen = new Uint8Array(n), stack = new Int32Array(n);
   let best = null, bestSize = 0, bestStart = -1;
@@ -1546,7 +1534,6 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
-  const guide = zone ? guideCanvasFor(goodFile.name, cur) : null;   // full image + green weld outline
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1573,8 +1560,9 @@ async function generateOne(split, idx, weights, hint, tag){
     let busyWaits = 0;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      // full image + real-defect exemplar + green weld-outline guide (the 4c2b9af setup)
-      try{ out = await edit(cur, crop, ex.name, region, size, SEV[sevKey], hint, guide); }
+      // just the base image + a short instruction naming the weld seam — the chat setup that
+      // makes Gemini EDIT (clean on-weld defect + clean pixel diff) instead of regenerate
+      try{ out = await edit(cur, null, ex.name, region, size, SEV[sevKey], hint); }
       catch(e){
         // 503 overloaded / 429 rate-limit: back off hard and keep this attempt (don't burn a retry)
         const busy = /overloaded|UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|rate/i.test(e.message);
@@ -2085,9 +2073,8 @@ function lightStep(d){
   const next = cards[i];
   if(next && next.__r) openLight(next.__r);
 }
-const showBase = on => { const img = $("#lImg");
-  img.src = on ? img.dataset.base : img.dataset.edit;
-  light.classList.toggle("compare", on); };
+// hold to see the edited image WITHOUT the segmentation overlay (never the original)
+const showBase = on => { $("#lOv").style.opacity = on ? "0" : "1"; };
 $("#lClose").onclick = closeLight;
 $("#lPrev").onclick = () => lightStep(-1);
 $("#lNext").onclick = () => lightStep(1);
