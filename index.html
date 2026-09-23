@@ -421,8 +421,8 @@ train a detector. Every label is measured from exactly what changed — never gu
     <div>
       <label>Severity — how pronounced it looks</label>
       <div class="seg" id="segSev">
-        <button data-v="faint">Faint</button><button data-v="moderate">Moderate</button>
-        <button data-v="severe">Severe</button><button data-v="mixed" class="on">Mixed</button>
+        <button data-v="faint" class="on">Faint</button><button data-v="moderate">Moderate</button>
+        <button data-v="severe">Severe</button><button data-v="mixed">Mixed</button>
       </div>
       <div class="seghint" id="hintSev"></div>
     </div>
@@ -584,15 +584,13 @@ flaw. ${weldCrop
   : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
 hint ? " " + hint.trim() : ""}
 
-REQUIRED — the defect must be OBVIOUS:
-- It MUST be strongly visible: clearly darker or lighter than the metal around it, high contrast,
-  the way a real radiographic flaw stands out. Do not make it subtle. When unsure, make it stronger
-  and larger, never fainter.
-- Actually add it — do NOT return image 1 unchanged or nearly unchanged. A near-identical image is
-  a failure; the defect has to be plainly there.
+REQUIRED — keep the defect VERY FAINT:
+- Make it extremely subtle and low-contrast — only just barely visible, the kind of flaw an inspector
+  would easily miss at a glance. Far fainter than you would normally draw. NOT a bold, dark or
+  high-contrast mark. When unsure, make it fainter, never stronger.
+- Still actually add it: a tiny, faint local variation must be present — but only just.
 - Add ONLY this one defect and keep the overall brightness of the rest of the image the same (do not
   brighten or darken the whole picture). Do not add any text, labels, arrows, outlines or watermarks.
-- Do NOT return an unchanged image, and do NOT add any text, labels, arrows, outlines or watermarks.
 Output only the edited image, same size as image 1.`;
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
@@ -1588,21 +1586,31 @@ async function generateOne(split, idx, weights, hint, tag){
       let oc = canvasOf(out); out.close();
       const full = (oc.width!==cur.width || oc.height!==cur.height)
                  ? resizeTo(oc, cur.width, cur.height) : oc;
-      // measure the defect (restricted to the weld mask, so the label sits on the weld)
-      const m = diffBBox(cur, full, zone ? zone.mask : null);
-      if(m && plausible(m.box, cur.width, cur.height) && m.strength < 5){
+      // measure whatever Gemini painted (anywhere), then check it's on/overlapping the weld
+      const m = diffBBox(cur, full);
+      if(m && plausible(m.box, cur.width, cur.height) && m.strength < 2){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
         await addRejectedCard(full, `too faint (contrast ${m.strength})`, cur);
         continue;
       }
       if(m && plausible(m.box, cur.width, cur.height)){
+        // lenient placement check: keep it if the defect meaningfully overlaps the weld zone
+        if(zone){
+          let inZ = 0, tot = 0;
+          for(let i=0;i<m.comp.length;i++) if(m.comp[i]){ tot++; if(zone.mask[i]) inZ++; }
+          if(tot && inZ/tot < 0.2){
+            log(`  · ${split} ${idx}: defect landed off the weld, retrying`);
+            await addRejectedCard(full, "off the weld", cur);
+            continue;
+          }
+        }
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
         cur = full; break;
       }
-      log(`  · ${split} ${idx}: nothing usable landed on the weld, retrying`);
-      await addRejectedCard(full, zone ? "nothing on the weld" : "no visible defect added", cur);
+      log(`  · ${split} ${idx}: no visible defect added, retrying`);
+      await addRejectedCard(full, "no visible defect added", cur);
     }
   }
   if(!boxes.length) return null;
@@ -1640,6 +1648,7 @@ function addCard(r){
     <span class="m">${m}</span></div><button class="x">drop</button>`;
   el.querySelector(".x").onclick = e => { e.stopPropagation(); drop(r); };
   el.querySelector("img").onclick = () => openLight(r);
+  el.__r = r;                                     // for arrow-key navigation across all cards
   $("#cards").prepend(el);
 }
 // every generated image is shown, even rejected ones — but rejects never enter the dataset
@@ -1656,6 +1665,7 @@ async function addRejectedCard(canvas, reason, baseCanvas){
     <span class="tagline bad">rejected · ${reason}</span>
     <div class="meta"><span>not added to dataset · click to enlarge</span></div>`;
   el.querySelector("img").onclick = () => openLight(r);
+  el.__r = r;                                     // for arrow-key navigation across all cards
   $("#cards").prepend(el);
 }
 function drop(r){
@@ -2066,9 +2076,14 @@ function openLight(r){
 function closeLight(){ light.classList.remove("on");
   lightURLs.forEach(URL.revokeObjectURL); lightURLs = []; lightR = null; }
 function lightStep(d){
-  if(!lightR || lightR.rejected) return;         // rejected previews aren't part of the dataset list
-  const i = state.results.indexOf(lightR), n = state.results.length;
-  if(n) openLight(state.results[(i + d + n) % n]);
+  if(!lightR) return;
+  // walk every visible card (kept + rejected) in the order they appear
+  const cards = [...$("#cards").children];
+  let i = cards.findIndex(c => c.__r === lightR);
+  if(i < 0) return;
+  i = Math.max(0, Math.min(cards.length-1, i + d));
+  const next = cards[i];
+  if(next && next.__r) openLight(next.__r);
 }
 const showBase = on => { const img = $("#lImg");
   img.src = on ? img.dataset.base : img.dataset.edit;
