@@ -621,16 +621,16 @@ function imageDataAt(canvas, s){
   const x = c.getContext("2d"); x.drawImage(canvas,0,0,c.width,c.height);
   return x.getImageData(0,0,c.width,c.height);
 }
-function morph(mask,w,h,keep){            // keep=9 erode(3x3), keep=1 dilate(3x3)
+function morph(mask,w,h,keep){            // keep = min 3x3 neighbour-sum to stay set (1 = dilate)
   const out = new Uint8Array(w*h);
   for(let y=0;y<h;y++) for(let x=0;x<w;x++){
     let n=0;
     for(let dy=-1;dy<=1;dy++) for(let dx=-1;dx<=1;dx++){
       const yy=y+dy, xx=x+dx;
-      if(yy<0||xx<0||yy>=h||xx>=w){ if(keep===9) n=-99; continue; }
+      if(yy<0||xx<0||yy>=h||xx>=w) continue;
       n += mask[yy*w+xx];
     }
-    out[y*w+x] = (keep===9 ? (n===9?1:0) : (n>=1?1:0));
+    out[y*w+x] = n >= keep ? 1 : 0;
   }
   return out;
 }
@@ -672,11 +672,11 @@ function diffBBox(before, after, restrict){
     if(inMask && !inMask[i]) v = 0;               // outside the weld can never count as a defect
     d[i]=v; if(v>max) max=v;
   }
-  if(max < 12) return null;                       // nothing changed inside the weld
-  const thr = Math.max(12, max*0.4);
+  if(max < 8) return null;                        // nothing changed
+  const thr = Math.max(8, max*0.4);
   let m = new Uint8Array(n);
   for(let i=0;i<n;i++) m[i] = d[i]>=thr ? 1 : 0;
-  m = morph(morph(m,w,h,2),w,h,2);                // gentle opening: kill 1-2px speckle, keep the true shape
+  m = morph(morph(m,w,h,3),w,h,1);                // light opening: drop lone specks, keep small dots
   // largest connected component
   const seen = new Uint8Array(n), stack = new Int32Array(n);
   let best = null, bestSize = 0, bestStart = -1;
@@ -759,7 +759,7 @@ function boxBlur(src, w, h, r){
 const plausible = (box,w,h) => {
   if(!box) return false;
   const frac = (box[2]*box[3])/(w*h);
-  return frac>=5e-5 && frac<=0.25 && box[2]>=4 && box[3]>=4;   // reject global restyle & noise
+  return frac<=0.25 && box[2]>=2 && box[3]>=2;   // allow tiny dots; reject only global restyle & lone pixels
 };
 
 /* ---------- input ---------- */
