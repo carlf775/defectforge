@@ -573,11 +573,11 @@ const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
   if(weldCrop){
     // Gemini sees ONLY the weld-seam crop — edit it, overlay one defect, change nothing else
     return `This image is a close-up of a weld seam from an X-ray radiograph. EDIT this image: `
-      + `overlay exactly ONE small, realistic ${name} defect on top of the weld — as if painting a `
-      + `small mark onto the existing image. ${sev}${hint ? " " + hint.trim() : ""}\n\n`
-      + `Keep it VERY faint — extremely subtle and low-contrast, only just barely visible.\n\n`
+      + `overlay exactly ONE small, clearly visible ${name} defect on top of the weld — as if painting `
+      + `a small mark onto the existing image. Make it small and realistic, but clearly distinct from `
+      + `the metal around it (a little darker or lighter). ${sev}${hint ? " " + hint.trim() : ""}\n\n`
       + `Critical: do NOT change the surface, texture, grain, brightness or anything else. Keep every `
-      + `pixel identical to this image except the tiny defect you overlay on top. Do not regenerate, `
+      + `pixel identical to this image except the small defect you overlay on top. Do not regenerate, `
       + `redraw, re-expose or re-frame the image. Return the exact same image with only the small `
       + `defect added. No text, arrows, outlines or watermarks.`;
   }
@@ -995,6 +995,29 @@ function stitchCrop(base, editedCrop, rect, feather){
     const d = Math.min(rx, ry, rect.w-1-rx, rect.h-1-ry);   // distance to the nearest crop edge
     const al = Math.max(0, Math.min(1, d/feather));         // 1 in the middle, fades to 0 at the edge
     const bi = ((rect.y+ry)*w + (rect.x+rx))*4, ei = (ry*rect.w+rx)*4, ia = 1-al;
+    bd.data[bi]   = bd.data[bi]  *ia + ed.data[ei]  *al;
+    bd.data[bi+1] = bd.data[bi+1]*ia + ed.data[ei+1]*al;
+    bd.data[bi+2] = bd.data[bi+2]*ia + ed.data[ei+2]*al;
+  }
+  const c=document.createElement("canvas"); c.width=w; c.height=h;
+  c.getContext("2d").putImageData(bd,0,0); return c;
+}
+// apply ONLY the detected defect from the edited crop onto the untouched original — the surface
+// stays byte-identical, so the pixel diff (and mask) is exactly the defect and there is no seam.
+// comp is the defect mask in crop coordinates; rect places the crop in the full image.
+function applyCropDefect(base, editedCrop, rect, comp){
+  const w=base.width, h=base.height;
+  const bd = base.getContext("2d").getImageData(0,0,w,h);
+  const ed = editedCrop.getContext("2d").getImageData(0,0,rect.w,rect.h);
+  let halo = new Float32Array(rect.w*rect.h);
+  for(let i=0;i<comp.length;i++) halo[i] = comp[i] ? 1 : 0;
+  halo = boxBlur(halo, rect.w, rect.h, 1);          // soft 1px edge, defect core stays full
+  for(let cy=0; cy<rect.h; cy++) for(let cx=0; cx<rect.w; cx++){
+    const ci = cy*rect.w+cx;
+    const al = comp[ci] ? 1 : halo[ci]; if(al <= 0.02) continue;
+    const bx = rect.x+cx, by = rect.y+cy;
+    if(bx<0||by<0||bx>=w||by>=h) continue;
+    const bi = (by*w+bx)*4, ei = ci*4, ia = 1-al;
     bd.data[bi]   = bd.data[bi]  *ia + ed.data[ei]  *al;
     bd.data[bi+1] = bd.data[bi+1]*ia + ed.data[ei+1]*al;
     bd.data[bi+2] = bd.data[bi+2]*ia + ed.data[ei+2]*al;
@@ -1565,9 +1588,9 @@ async function generateOne(split, idx, weights, hint, tag){
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
     // send Gemini ONLY the weld crop (upscaled for resolution) so it can't paint anywhere else
-    let sendImg = cur;
+    let sendImg = cur, baseCrop = null;
     if(zone){
-      const baseCrop = cropRegion(cur, cropRect);
+      baseCrop = cropRegion(cur, cropRect);
       const upf = Math.max(1, Math.min(4, Math.round(768 / Math.max(cropRect.w, cropRect.h))));
       sendImg = upf > 1 ? resizeTo(baseCrop, cropRect.w*upf, cropRect.h*upf) : baseCrop;
     }
@@ -1585,17 +1608,34 @@ async function generateOne(split, idx, weights, hint, tag){
         log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue;
       }
       let oc = canvasOf(out); out.close();
-      // stitch the edited crop back into the ORIGINAL at the exact same spot
-      let full;
+
       if(zone){
+        // find the defect Gemini added WITHIN the crop (original crop vs edited crop)
         const editedCrop = (oc.width!==cropRect.w || oc.height!==cropRect.h)
                          ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
-        full = stitchCrop(cur, editedCrop, cropRect,
-                          Math.max(4, Math.round(Math.min(cropRect.w, cropRect.h)*0.1)));
-      }else{
-        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
+        const cm = diffBBox(baseCrop, editedCrop);
+        const tooBig = cm && (cm.box[2]*cm.box[3]) > 0.6*cropRect.w*cropRect.h;  // whole-crop restyle
+        if(cm && !tooBig && cm.strength < 2){
+          log(`  · ${split} ${idx}: defect too faint (contrast ${cm.strength}), retrying`);
+          await addRejectedCard(editedCrop, `too faint (contrast ${cm.strength})`, baseCrop);
+          continue;
+        }
+        if(cm && !tooBig){
+          // apply ONLY that defect onto the untouched original → perfect mask, no seam
+          const composite = applyCropDefect(cur, editedCrop, cropRect, cm.comp);
+          const box = [cropRect.x+cm.box[0], cropRect.y+cm.box[1], cm.box[2], cm.box[3]];
+          const poly = cm.poly.map(([x,y]) => [x+cropRect.x, y+cropRect.y]);
+          boxes.push({cat:ex.cat, name:ex.name, box, poly, maskArea:cm.maskArea,
+                      sev:sevKey, strength:cm.strength, pct:+(cm.box[2]/cur.width*100).toFixed(1)});
+          cur = composite; break;
+        }
+        log(`  · ${split} ${idx}: ${tooBig?"whole crop changed":"no visible defect"}, retrying`);
+        await addRejectedCard(editedCrop, tooBig?"whole crop changed — retrying":"no visible defect", baseCrop);
+        continue;
       }
-      // PERFECT MASK: pure pixel difference between the original and the stitched result
+
+      // no weld zone marked: fall back to full-image diff
+      const full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
       const m = diffBBox(cur, full);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 2){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
@@ -1603,7 +1643,6 @@ async function generateOne(split, idx, weights, hint, tag){
         continue;
       }
       if(m && plausible(m.box, cur.width, cur.height)){
-        // the mask is simply the measured pixel difference — whatever changed, wherever it changed
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
