@@ -572,21 +572,35 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
+// how each defect type actually looks in a weld radiograph — so each class renders distinctly
+const DEFECT_DESC = {
+  porosity: "one or a few small round or oval dark spots (gas voids), smooth-edged, like little dark bubbles",
+  crack: "a very thin, sharp, jagged dark line with irregular direction, sometimes branching — hair-thin, not straight",
+  inclusion: "a small irregular blob of trapped foreign material — an angular dark patch (slag), or a bright white spot (tungsten) — not a smooth round hole",
+  lack_of_fusion: "a narrow elongated dark streak running along the side of the weld where it failed to fuse to the base metal — straighter and more linear than a crack",
+  lack_of_penetration: "a straight, continuous, sharp dark line right along the centre/root of the weld, as if the joint was never filled",
+  undercut: "a dark groove or notch running along the edge (toe) of the weld, where base metal was melted away",
+  slag: "an irregular angular dark patch of trapped slag with rough edges",
+};
+const defectDesc = name => DEFECT_DESC[name] || DEFECT_DESC[name.replace(/[\s-]/g,"_").toLowerCase()] || null;
+
 const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
   const name = cat.replace(/_/g, " ");
+  const desc = defectDesc(cat);
+  const look = desc ? ` A ${name} defect looks like ${desc}.` : "";
   if(weldCrop){
     // Gemini sees ONLY the weld-seam crop — edit it, overlay one defect, change nothing else
     return `This image is a close-up of a weld seam from an X-ray radiograph. EDIT this image: `
       + `overlay exactly ONE small, clearly visible ${name} defect on top of the weld — as if painting `
-      + `a small mark onto the existing image. Make it small and realistic, but clearly distinct from `
-      + `the metal around it (a little darker or lighter). ${sev}${hint ? " " + hint.trim() : ""}\n\n`
+      + `a small mark onto the existing image.${look} Make it small and realistic, but clearly distinct `
+      + `from the metal around it (a little darker or lighter). ${sev}${hint ? " " + hint.trim() : ""}\n\n`
       + `Critical: do NOT change the surface, texture, grain, brightness or anything else. Keep every `
       + `pixel identical to this image except the small defect you overlay on top. Do not regenerate, `
       + `redraw, re-expose or re-frame the image. Return the exact same image with only the small `
       + `defect added. No text, arrows, outlines or watermarks.`;
   }
   return `This is an X-ray radiograph of a welded metal part. On the weld seam, add exactly one small, `
-    + `realistic ${name} defect. ${sev}${hint ? " " + hint.trim() : ""} Keep it very faint and subtle.\n\n`
+    + `realistic ${name} defect.${look} ${sev}${hint ? " " + hint.trim() : ""} Keep it very faint and subtle.\n\n`
     + `Do not change anything else: return this exact same image with only the small defect added on `
     + `the weld. Do not regenerate or redraw the rest. No text, arrows, outlines or watermarks.`;
 };
