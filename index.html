@@ -198,7 +198,11 @@ input[type=file]{display:none}
   border:1px solid rgba(255,255,255,.13);border-radius:999px;padding:6px 13px;font-size:13px;
   cursor:pointer;user-select:none;-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px)}
 .chip:hover{border-color:var(--accent-deep)}
-.chip input{margin:0;accent-color:var(--accent)}
+.chip{opacity:.45;filter:grayscale(.5)}                 /* OFF by default: dim + greyed */
+.chip.on{opacity:1;filter:none;background:color-mix(in srgb,var(--ok) 16%,rgba(255,255,255,.06));
+  border-color:color-mix(in srgb,var(--ok) 55%,transparent)}
+.chip:not(.on){text-decoration:line-through}
+.chip input{margin:0;accent-color:var(--ok)}
 .chip .dot{width:9px;height:9px;border-radius:2px;flex:0 0 auto}
 .chip .n{color:var(--muted);font-variant-numeric:tabular-nums;font-size:12px}
 .thumbs{display:flex;gap:8px;overflow-x:auto;padding:14px 0 4px}
@@ -1144,10 +1148,12 @@ function renderClasses(counts){
   [...counts.entries()].sort((a,b)=>b[1]-a[1]).forEach(([name,n]) => {
     const l = document.createElement("label"); l.className = "chip";
     const isDefect = !/(^|_)(weld_?seam|seam|background|good|ok|none)($|_)/i.test(name);
+    l.classList.toggle("on", isDefect);
     l.innerHTML = `<input type="checkbox" ${isDefect ? "checked" : ""} value="${name}">
       <span class="dot" style="background:${colorForLabel(name)}"></span>
       ${name} <span class="n">${n}</span>`;
-    l.querySelector("input").onchange = ready;
+    const inp = l.querySelector("input");
+    inp.onchange = () => { l.classList.toggle("on", inp.checked); ready(); };
     chips.appendChild(l);
   });
   const th = $("#thumbs"); th.innerHTML = "";
