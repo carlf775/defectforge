@@ -1631,6 +1631,12 @@ async function generateOne(split, idx, weights, hint, tag){
         await addRejectedCard(full, `too faint (contrast ${m.strength})`, cur);
         continue;
       }
+      // a real defect is small — if the change covers most of the weld, Gemini re-rendered it: reject
+      if(m && zone && m.maskArea > 0.35 * zone.pts.length){
+        log(`  · ${split} ${idx}: change covers the whole weld (not a real defect), retrying`);
+        await addRejectedCard(full, "whole weld changed — retrying", cur);
+        continue;
+      }
       if(m && plausible(m.box, cur.width, cur.height)){
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
