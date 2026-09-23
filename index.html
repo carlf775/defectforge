@@ -1582,16 +1582,7 @@ async function generateOne(split, idx, weights, hint, tag){
         continue;
       }
       if(m && plausible(m.box, cur.width, cur.height)){
-        // lenient placement check: keep it if the defect meaningfully overlaps the weld zone
-        if(zone){
-          let inZ = 0, tot = 0;
-          for(let i=0;i<m.comp.length;i++) if(m.comp[i]){ tot++; if(zone.mask[i]) inZ++; }
-          if(tot && inZ/tot < 0.2){
-            log(`  · ${split} ${idx}: defect landed off the weld, retrying`);
-            await addRejectedCard(full, "off the weld", cur);
-            continue;
-          }
-        }
+        // the mask is simply the measured pixel difference — whatever changed, wherever it changed
         boxes.push({cat:ex.cat, name:ex.name, box:m.box, poly:m.poly, maskArea:m.maskArea,
                     sev:sevKey, strength:m.strength,
                     pct:+(m.box[2]/cur.width*100).toFixed(1)});
