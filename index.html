@@ -569,31 +569,18 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
   moderate:"The middle of the distribution.", severe:"Easy positives. Useful for a first sanity run.",
   mixed:"A different severity per defect. Closest to a real production mix."};
 
-const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) =>
-`You are producing training data for an automated visual defect-inspection system.
-
-Image 1: ${weldCrop ? "a close-up of a weld seam." : "a defect-free item."} Image 2: a close-up crop
-of a real "${cat}" defect from another item.${
-hasGuide ? `\nImage 3: the same item as image 1 with the weld area outlined in bright green.` : ""}
-
-Your task: add exactly ONE small, realistic "${cat}" defect onto image 1, matching the type, shape,
-appearance and texture of the real defect in image 2 — study image 2 and reproduce that kind of
-flaw. ${weldCrop
-  ? `The whole of image 1 is the weld surface. Lay the defect on top of it, roughly in the middle, without changing the surrounding metal texture, grain or brightness.`
-  : hasGuide
-  ? `Place it well INSIDE the bright-green outline in image 3 (the weld); do not draw the green line itself.`
-  : `Place it in the ${region}.`} Make it span roughly ${size}% of the image width. ${sev}${
-hint ? " " + hint.trim() : ""}
-
-Keep it subtle and true to life: a genuine radiographic flaw is a small, low-contrast local variation
-in the metal, NOT a bold black blob or dramatic mark. Slightly visible is correct; exaggerated is wrong.
-
-Most important — do not change the picture itself:
-- Return image 1 exactly as it is, with only the small defect added. Do NOT regenerate, redraw,
-  re-frame, zoom, or change the part, the background, the framing, the brightness or the resolution.
-- Every pixel that is not the defect must stay identical to image 1. Only a small area may differ.
-- Do not add any text, labels, arrows, outlines or watermarks. Output the edited image at the same
-  size as image 1.`;
+const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop, hasExemplar) => {
+  const name = cat.replace(/_/g, " ");
+  return `This is an X-ray radiograph of a welded metal part. Add one small, realistic ${name} defect `
+    + `on the weld seam, exactly as it would look in a real radiograph. ${sev}${
+       hint ? " " + hint.trim() : ""}${
+       hasExemplar ? ` The second image shows a real ${name} defect — match its look and texture.` : ""}\n\n`
+    + `Keep it subtle and true to life — a genuine flaw is a small, low-contrast local variation in the `
+    + `metal, not a bold black blob or dramatic mark.\n\n`
+    + `Do not change anything else about the picture. Return this exact same image — same part, framing, `
+    + `background, brightness and resolution — with only the small defect added on the weld. Do not `
+    + `regenerate or redraw the rest. No text, arrows, outlines or watermarks.`;
+};
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
 const hashStr = s => {let h=5381; for(let i=0;i<s.length;i++) h=(((h<<5)+h)^s.charCodeAt(i))>>>0; return h};
@@ -1473,11 +1460,12 @@ async function cropCanvas(ex, pad=0.35){
 
 /* ---------- gemini ---------- */
 async function edit(baseCanvas, cropCanvasEl, cat, region, size, sev, hint, guideCanvas, weldCrop){
-  const blobs = [toBlob(baseCanvas), toBlob(cropCanvasEl)];
+  const blobs = [toBlob(baseCanvas)];                 // the base image is always sent
+  if(cropCanvasEl) blobs.push(toBlob(cropCanvasEl));  // optional real-defect reference
   if(guideCanvas) blobs.push(toBlob(guideCanvas));
   const datas = await Promise.all((await Promise.all(blobs)).map(toB64));
   const model = $("#model").value;
-  const parts = [{text: PROMPT(cat, region, size, sev, hint, !!guideCanvas, weldCrop)}];
+  const parts = [{text: PROMPT(cat, region, size, sev, hint, !!guideCanvas, weldCrop, !!cropCanvasEl)}];
   for(const d of datas) parts.push({inlineData:{mimeType:"image/jpeg", data:d}});
   const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,{
     method:"POST",
@@ -1547,8 +1535,6 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
-  // crop-and-stitch: Gemini only ever sees the weld region, so it can't touch the rest of the image
-  const cropRect = zone ? cropRectOfZone(zone, 0.4) : null;
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1572,18 +1558,11 @@ async function generateOne(split, idx, weights, hint, tag){
     }else region = `${pick(rnd, CELLS)} area`;
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
-    // build the weld crop, upscaled so the model has enough resolution to paint a clean defect
-    let sendImg = cur, up = 1, promptSize = size;
-    if(zone){
-      const baseCrop = cropRegion(cur, cropRect);
-      up = Math.max(1, Math.min(4, Math.round(768 / Math.max(cropRect.w, cropRect.h))));
-      sendImg = up > 1 ? resizeTo(baseCrop, cropRect.w*up, cropRect.h*up) : baseCrop;
-      promptSize = Math.min(40, +(size * cur.width / cropRect.w).toFixed(1));  // % of the crop
-    }
     let busyWaits = 0;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      try{ out = await edit(sendImg, crop, ex.name, region, promptSize, SEV[sevKey], hint, null, !!zone); }
+      // just the base image + a short instruction — the setup that works in the chat
+      try{ out = await edit(cur, null, ex.name, region, size, SEV[sevKey], hint); }
       catch(e){
         // 503 overloaded / 429 rate-limit: back off hard and keep this attempt (don't burn a retry)
         const busy = /overloaded|UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|rate/i.test(e.message);
@@ -1593,15 +1572,8 @@ async function generateOne(split, idx, weights, hint, tag){
         log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue;
       }
       let oc = canvasOf(out); out.close();
-      // stitch Gemini's edited crop back into the ORIGINAL — the rest of the image can't change
-      let full;
-      if(zone){
-        const editedCrop = (oc.width!==cropRect.w || oc.height!==cropRect.h)
-                         ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
-        full = stitchCrop(cur, editedCrop, cropRect, Math.max(6, Math.round(Math.min(cropRect.w,cropRect.h)*0.12)));
-      }else{
-        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
-      }
+      const full = (oc.width!==cur.width || oc.height!==cur.height)
+                 ? resizeTo(oc, cur.width, cur.height) : oc;
       // measure the defect (restricted to the weld mask, so the label sits on the weld)
       const m = diffBBox(cur, full, zone ? zone.mask : null);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 3){
