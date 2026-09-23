@@ -1762,16 +1762,37 @@ function computePools(){
     : {base: state.goods, held: []};
   return holdout;
 }
-$("#go").onclick = () => {
+// in-page confirm (native confirm() is suppressed inside the embedded browser pane)
+function uiConfirm(msg){
+  return new Promise(res => {
+    const wrap = document.createElement("div");
+    wrap.style.cssText = "position:fixed;inset:0;z-index:300;background:rgba(0,0,0,.6);"+
+      "display:grid;place-items:center;padding:24px";
+    wrap.innerHTML = `<div style="background:var(--popover);border:1px solid var(--line);`+
+      `border-radius:12px;max-width:420px;padding:20px 22px;font-size:14px;line-height:1.55;`+
+      `box-shadow:0 20px 60px rgba(0,0,0,.5)">${msg}`+
+      `<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:18px">`+
+      `<button id="ucNo" style="padding:8px 15px;border-radius:8px;border:1px solid var(--line);`+
+      `background:transparent;color:var(--ink);cursor:pointer">Cancel</button>`+
+      `<button id="ucYes" class="primary" style="padding:8px 15px;border-radius:8px;border:0;`+
+      `cursor:pointer">Generate</button></div></div>`;
+    document.body.appendChild(wrap);
+    const done = v => { wrap.remove(); res(v); };
+    wrap.querySelector("#ucNo").onclick = () => done(false);
+    wrap.querySelector("#ucYes").onclick = () => done(true);
+    wrap.onclick = e => { if(e.target === wrap) done(false); };
+  });
+}
+$("#go").onclick = async () => {
   const holdout = computePools();
   const nTr = +$("#ntrain").value||0, nVa = +$("#nvalid").value||0;
   const nTest = holdout ? Math.min(30, Math.max(12, Math.round(nTr*0.2))) : 0;
   const total = nTr + nVa + nTest;
   const avg = ((+$("#mind").value||1) + (+$("#maxd").value||1))/2;
   const calls = Math.round(total*avg);
-  const ok = confirm(`Generate ${total} images (${nTr} train, ${nVa} valid` +
-    (nTest ? `, ${nTest} unseen-background test` : "") + `).\n\n` +
-    `This makes about ${calls} paid Gemini image calls. Continue?`);
+  const ok = await uiConfirm(`Generate <b>${total} images</b> (${nTr} train, ${nVa} valid` +
+    (nTest ? `, ${nTest} unseen-background test` : "") + `).<br><br>` +
+    `This makes about <b>${calls}</b> paid Gemini image calls (more with retries). Continue?`);
   if(!ok) return;
   run([...jobList(nTr, "train"), ...jobList(nVa, "valid"),
        ...(nTest ? jobList(nTest, "test") : [])], "");
