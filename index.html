@@ -570,15 +570,21 @@ const SEV_HINT = {faint:"Trains the model on the marginal cases it will actually
 
 const PROMPT = (cat, region, size, sev, hint, hasGuide, weldCrop) => {
   const name = cat.replace(/_/g, " ");
+  if(weldCrop){
+    // Gemini sees ONLY the weld-seam crop — edit it, overlay one defect, change nothing else
+    return `This image is a close-up of a weld seam from an X-ray radiograph. EDIT this image: `
+      + `overlay exactly ONE small, realistic ${name} defect on top of the weld — as if painting a `
+      + `small mark onto the existing image. ${sev}${hint ? " " + hint.trim() : ""}\n\n`
+      + `Keep it VERY faint — extremely subtle and low-contrast, only just barely visible.\n\n`
+      + `Critical: do NOT change the surface, texture, grain, brightness or anything else. Keep every `
+      + `pixel identical to this image except the tiny defect you overlay on top. Do not regenerate, `
+      + `redraw, re-expose or re-frame the image. Return the exact same image with only the small `
+      + `defect added. No text, arrows, outlines or watermarks.`;
+  }
   return `This is an X-ray radiograph of a welded metal part. On the weld seam, add exactly one small, `
-    + `realistic ${name} defect — the kind that shows up in a real radiograph of a weld. Put it clearly `
-    + `on the weld seam itself, not on the surrounding metal.\n\n`
-    + `Keep it VERY faint: extremely subtle and low-contrast, only just barely visible — the kind an `
-    + `inspector could easily miss. ${sev}${hint ? " " + hint.trim() : ""} When unsure, make it fainter, `
-    + `never stronger; a small, faint local variation, not a bold or dark mark.\n\n`
-    + `Do not change anything else: return this exact same image — same part, framing, background, `
-    + `brightness and resolution — with only the small defect added on the weld. Do not regenerate or `
-    + `redraw the rest, and do not add any text, arrows, outlines or watermarks.`;
+    + `realistic ${name} defect. ${sev}${hint ? " " + hint.trim() : ""} Keep it very faint and subtle.\n\n`
+    + `Do not change anything else: return this exact same image with only the small defect added on `
+    + `the weld. Do not regenerate or redraw the rest. No text, arrows, outlines or watermarks.`;
 };
 
 const GOLDEN_ANGLE = 137.508;                    // colour scheme lifted from the deepvis annotator
@@ -1534,6 +1540,7 @@ async function generateOne(split, idx, weights, hint, tag){
   const bmp = await createImageBitmap(goodFile);
   let cur = canvasOf(bmp); bmp.close();
   const zone = zoneFor(goodFile.name, cur.width, cur.height);
+  const cropRect = zone ? cropRectOfZone(zone, 0.25) : null;   // Gemini only ever sees this weld crop
   const baseBlob = await toBlob(cur, 0.85);
   const boxes = [];
   const k = randint(rnd, +$("#mind").value||1, Math.max(+$("#mind").value||1, +$("#maxd").value||1));
@@ -1557,12 +1564,18 @@ async function generateOne(split, idx, weights, hint, tag){
     }else region = `${pick(rnd, CELLS)} area`;
     const size = +(lo + rnd()*(hi-lo)).toFixed(1);
     const sevKey = sevChoice()==="mixed" ? pick(rnd, ["faint","moderate","severe"]) : sevChoice();
+    // send Gemini ONLY the weld crop (upscaled for resolution) so it can't paint anywhere else
+    let sendImg = cur;
+    if(zone){
+      const baseCrop = cropRegion(cur, cropRect);
+      const upf = Math.max(1, Math.min(4, Math.round(768 / Math.max(cropRect.w, cropRect.h))));
+      sendImg = upf > 1 ? resizeTo(baseCrop, cropRect.w*upf, cropRect.h*upf) : baseCrop;
+    }
     let busyWaits = 0;
     for(let att=0; att<=retries && !abort; att++){
       let out;
-      // just the base image + a short instruction naming the weld seam — the chat setup that
-      // makes Gemini EDIT (clean on-weld defect + clean pixel diff) instead of regenerate
-      try{ out = await edit(cur, null, ex.name, region, size, SEV[sevKey], hint); }
+      // weldCrop prompt: overlay one defect on the crop, change nothing else
+      try{ out = await edit(sendImg, null, ex.name, region, size, SEV[sevKey], hint, null, !!zone); }
       catch(e){
         // 503 overloaded / 429 rate-limit: back off hard and keep this attempt (don't burn a retry)
         const busy = /overloaded|UNAVAILABLE|503|RESOURCE_EXHAUSTED|429|rate/i.test(e.message);
@@ -1572,9 +1585,17 @@ async function generateOne(split, idx, weights, hint, tag){
         log(`  ! ${e.message}`); await sleep(1200*(att+1)); continue;
       }
       let oc = canvasOf(out); out.close();
-      const full = (oc.width!==cur.width || oc.height!==cur.height)
-                 ? resizeTo(oc, cur.width, cur.height) : oc;
-      // measure whatever Gemini painted (anywhere), then check it's on/overlapping the weld
+      // stitch the edited crop back into the ORIGINAL at the exact same spot
+      let full;
+      if(zone){
+        const editedCrop = (oc.width!==cropRect.w || oc.height!==cropRect.h)
+                         ? resizeTo(oc, cropRect.w, cropRect.h) : oc;
+        full = stitchCrop(cur, editedCrop, cropRect,
+                          Math.max(4, Math.round(Math.min(cropRect.w, cropRect.h)*0.1)));
+      }else{
+        full = (oc.width!==cur.width || oc.height!==cur.height) ? resizeTo(oc, cur.width, cur.height) : oc;
+      }
+      // PERFECT MASK: pure pixel difference between the original and the stitched result
       const m = diffBBox(cur, full);
       if(m && plausible(m.box, cur.width, cur.height) && m.strength < 2){
         log(`  · ${split} ${idx}: defect too faint (contrast ${m.strength}), retrying`);
